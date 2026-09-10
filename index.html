@@ -2,23 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ハムの大冒険 🐹</title>
-
-    <!-- PWA / App化設定 -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ハムの大冒険">
-    <meta name="theme-color" content="#0f172a">
-
-    <!-- Web App Manifest (インラインデータ化) -->
-    <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22%E3%83%8F%E3%83%A0%E3%81%AE%E5%A4%A7%E5%86%92%E9%99%BA%22%2C%22short_name%22%3A%22%E3%83%8F%E3%83%A0%E5%86%92%E9%99%BA%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f172a%22%2C%22theme_color%22%3A%22%230f172a%22%7D">
-
-    <!-- アプリアイコン (SVG動的生成) -->
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23f59e0b%22/><text y=%22.9em%22 font-size=%2280%22>🐹</text></svg>">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
-
     <style>
         * {
             box-sizing: border-box;
@@ -35,12 +20,10 @@
             margin: 0;
             padding: 10px;
             font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
-            min-height: 100vh;
-            overflow: hidden;
         }
         h1 {
             color: #f59e0b;
-            margin: 0 0 5px 0;
+            margin: 5px 0;
             font-size: 18px;
             text-shadow: 1px 1px 2px #000;
         }
@@ -195,10 +178,6 @@
     </div>
 
     <script>
-        // 画面のダブルタップズームや誤スクロールを強力に防止
-        document.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
-        document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
-
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -254,6 +233,23 @@
         let soundEnabled = false;
         let bgmTimer = null;
         let isBGMPlaying = false;
+
+        // 🔊 画面が裏に回った（非表示になった）ときに音を停止する処理
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (bgmTimer) clearInterval(bgmTimer);
+                if (audioCtx && audioCtx.state === 'running') {
+                    audioCtx.suspend();
+                }
+            } else {
+                if (soundEnabled && isBGMPlaying) {
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+                    startBGM();
+                }
+            }
+        });
 
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
