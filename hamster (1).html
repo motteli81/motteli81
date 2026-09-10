@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ハムの大冒険 🐹</title>
+
+    <!-- PWA / App化設定 -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ハムの大冒険">
+    <meta name="theme-color" content="#0f172a">
+
+    <!-- Web App Manifest (インラインデータ化) -->
+    <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22%E3%83%8F%E3%83%A0%E3%81%AE%E5%A4%A7%E5%86%92%E9%99%BA%22%2C%22short_name%22%3A%22%E3%83%8F%E3%83%A0%E5%86%92%E9%99%BA%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f172a%22%2C%22theme_color%22%3A%22%230f172a%22%7D">
+
+    <!-- アプリアイコン (SVG動的生成) -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23f59e0b%22/><text y=%22.9em%22 font-size=%2280%22>🐹</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        body {
+            background-color: #0f172a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 10px;
+            font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        h1 {
+            color: #f59e0b;
+            margin: 0 0 5px 0;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px #000;
+        }
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background-color: #38bdf8;
+            width: 400px;
+            height: 240px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 400px;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        .btn-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+        .dpad-container {
+            display: grid;
+            grid-template-columns: repeat(3, 45px);
+            grid-template-rows: repeat(3, 45px);
+            gap: 3px;
+        }
+        .joystick-container {
+            width: 130px;
+            height: 130px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            position: relative;
+            touch-action: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .joystick-stick {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(145deg, #f59e0b, #d97706);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            pointer-events: none;
+        }
+        .btn {
+            background: linear-gradient(145deg, #f59e0b, #d97706);
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            border: 2px solid #fff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 3px rgba(0,0,0,0.3);
+        }
+        .btn-left { grid-column: 1; grid-row: 2; }
+        .btn-right { grid-column: 3; grid-row: 2; }
+        .btn-action {
+            width: 75px;
+            height: 75px;
+            border-radius: 50%;
+            font-size: 18px;
+            touch-action: none;
+        }
+        .btn-jump { background: linear-gradient(145deg, #10b981, #059669); }
+        .btn-shot { background: linear-gradient(145deg, #ef4444, #dc2626); }
+        .sound-btn {
+            width: 100%;
+            height: 36px;
+            background-color: #0284c7;
+            color: white;
+            font-size: 13px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px #0369a1;
+        }
+        .stage-select-bar {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .select-btn {
+            flex: 1;
+            padding: 6px 0;
+            background-color: #334155;
+            color: #f8fafc;
+            border: 1px solid #64748b;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .select-btn.active {
+            background-color: #f59e0b;
+            color: #000;
+            border-color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+
+    <h1 id="titleText">🐹 ハムの大冒険</h1>
+
+    <div class="stage-select-bar">
+        <button class="select-btn active" id="btnSelect11" onclick="switchStage(1)">1-1 地上</button>
+        <button class="select-btn" id="btnSelect12" onclick="switchStage(2)">1-2 海中</button>
+        <button class="select-btn" id="btnSelect13" onclick="switchStage(3)">1-3 宇宙ボス戦(空中)</button>
+    </div>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="480"></canvas>
+    </div>
+
+    <div class="controls">
+        <button class="sound-btn" id="btnSound">🎵 サウンド ON / OFF (タップしてスタート)</button>
+        <div class="btn-row">
+            <div class="dpad-container" id="dpadContainer">
+                <div class="btn btn-left" id="btnLeft">←</div>
+                <div class="btn btn-right" id="btnRight">→</div>
+            </div>
+            <div class="joystick-container" id="joystickArea">
+                <div class="joystick-stick" id="joystickStick"></div>
+            </div>
+            <div>
+                <div class="btn btn-action btn-shot" id="btnShot">SHOT</div>
+                <div class="btn btn-action btn-jump" id="btnJump">JUMP</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 画面のダブルタップズームや誤スクロールを強力に防止
+        document.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+        document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const SCALE = 2;
+        const BASE_WIDTH = 400;
+        const BASE_HEIGHT = 240;
+
+        let currentWorld = 1;
+        let STAGE_WIDTH = 3600;
+        const STAGE_HEIGHT = 240;
+
+        const camera = { x: 0, y: 0, width: BASE_WIDTH, height: BASE_HEIGHT };
+
+        let gameState = 'PLAYING';
+        let score = 0;
+        let lives = 3;
+        let itemsCollected = 0;
+        let totalItems = 14;
+        let animTime = 0;
+        let popupText = '';
+        let popupTimer = 0;
+
+        let moveLeft = false, moveRight = false;
+        let joystickVector = { x: 0, y: 0 };
+        let joystickTouchId = null;
+
+        let bullets = [];
+        let bossBullets = [];
+        let boss = null;
+        let bgmPhase = 'NORMAL';
+
+        const stars = [];
+        for (let i = 0; i < 60; i++) {
+            stars.push({
+                x: Math.random() * 4000,
+                y: Math.random() * STAGE_HEIGHT,
+                size: Math.random() * 3 + 1,
+                alpha: Math.random()
+            });
+        }
+
+        const bubbles = [];
+        for (let i = 0; i < 30; i++) {
+            bubbles.push({
+                x: Math.random() * STAGE_WIDTH,
+                y: Math.random() * STAGE_HEIGHT,
+                radius: 2 + Math.random() * 4,
+                speed: 0.3 + Math.random() * 0.7
+            });
+        }
+
+        let audioCtx = null;
+        let soundEnabled = false;
+        let bgmTimer = null;
+        let isBGMPlaying = false;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            soundEnabled = true;
+            if (!isBGMPlaying) startBGM();
+        }
+
+        function playSound(type) {
+            if (!soundEnabled || !audioCtx) return;
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+
+            if (type === 'jump' || type === 'swim' || type === 'fly') {
+                osc.type = currentWorld === 1 ? 'square' : (currentWorld === 2 ? 'sine' : 'triangle');
+                let startFreq = currentWorld === 1 ? 150 : (currentWorld === 2 ? 400 : 320);
+                let endFreq = currentWorld === 1 ? 600 : (currentWorld === 2 ? 800 : 650);
+                osc.frequency.setValueAtTime(startFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.12);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now); osc.stop(now + 0.12);
+            } else if (type === 'shot') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(900, now); osc.frequency.exponentialRampToValueAtTime(300, now + 0.06);
+                gain.gain.setValueAtTime(0.15, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.06);
+                osc.start(now); osc.stop(now + 0.06);
+            } else if (type === 'hit' || type === 'stomp') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(100, now + 0.1);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'item') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, now); osc.frequency.setValueAtTime(659.25, now + 0.08);
+                gain.gain.setValueAtTime(0.25, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                osc.start(now); osc.stop(now + 0.2);
+            } else if (type === 'powerup') {
+                osc.type = 'triangle';
+                [261.63, 329.63, 392.00, 523.25].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.06));
+                gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+                osc.start(now); osc.stop(now + 0.35);
+            } else if (type === 'damage' || type === 'bossExplode') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now); osc.frequency.linearRampToValueAtTime(40, now + 0.4);
+                gain.gain.setValueAtTime(0.4, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now); osc.stop(now + 0.4);
+            } else if (type === 'clear') {
+                osc.type = 'triangle';
+                [523.25, 659.25, 783.99, 1046.50].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.12));
+                gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.6);
+                osc.start(now); osc.stop(now + 0.6);
+            }
+        }
+
+        function startBGM() {
+            if (bgmTimer) clearInterval(bgmTimer);
+            isBGMPlaying = true;
+
+            const w1_melody  = [523.25, 659.25, 783.99, 659.25, 880.00, 783.99, 659.25, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 523.25, 493.88, 392.00];
+            const w1_harmony = [329.63, 392.00, 523.25, 392.00, 523.25, 523.25, 392.00, 329.63, 349.23, 392.00, 440.00, 392.00, 349.23, 329.63, 293.66, 246.94];
+            const w1_bass    = [130.81, 130.81, 196.00, 130.81, 174.61, 174.61, 130.81, 130.81, 146.83, 146.83, 174.61, 146.83, 196.00, 196.00, 130.81, 196.00];
+
+            const w2_melody  = [392.00, 493.88, 587.33, 659.25, 587.33, 493.88, 440.00, 523.25, 659.25, 698.46, 659.25, 523.25, 392.00, 440.00, 493.88, 392.00];
+            const w2_harmony = [246.94, 293.66, 392.00, 392.00, 392.00, 293.66, 261.63, 329.63, 392.00, 440.00, 392.00, 329.63, 246.94, 261.63, 293.66, 246.94];
+            const w2_bass    = [98.00,  0,      146.83, 0,      98.00,  0,      110.00, 0,      130.81, 0,      110.00, 0,      98.00,  0,      146.83, 0];
+
+            const w3_melody  = [659.25, 659.25, 783.99, 659.25, 880.00, 659.25, 1046.50, 987.77, 880.00, 783.99, 659.25, 587.33, 659.25, 783.99, 880.00, 1046.50];
+            const w3_harmony = [329.63, 329.63, 392.00, 329.63, 440.00, 329.63, 523.25,  493.88, 440.00, 392.00, 329.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+            const w3_bass    = [164.81, 164.81, 329.63, 164.81, 220.00, 164.81, 261.63,  246.94, 220.00, 196.00, 164.81, 146.83, 164.81, 196.00, 220.00, 261.63];
+
+            const boss_melody  = [440.00, 466.16, 440.00, 349.23, 440.00, 523.25, 466.16, 440.00, 349.23, 392.00, 440.00, 466.16, 523.25, 587.33, 523.25, 466.16];
+            const boss_harmony = [220.00, 233.08, 220.00, 174.61, 220.00, 261.63, 233.08, 220.00, 174.61, 196.00, 220.00, 233.08, 261.63, 293.66, 261.63, 233.08];
+            const boss_bass    = [110.00, 110.00, 220.00, 110.00, 116.54, 116.54, 233.08, 116.54, 110.00, 110.00, 220.00, 110.00, 130.81, 130.81, 261.63, 130.81];
+
+            let mel = w1_melody, harm = w1_harmony, bass = w1_bass;
+            let speed = 160;
+
+            if (currentWorld === 2) {
+                mel = w2_melody; harm = w2_harmony; bass = w2_bass; speed = 220;
+            } else if (currentWorld === 3) {
+                if (bgmPhase === 'BOSS') {
+                    mel = boss_melody; harm = boss_harmony; bass = boss_bass; speed = 110;
+                } else {
+                    mel = w3_melody; harm = w3_harmony; bass = w3_bass; speed = 130;
+                }
+            }
+
+            let idx = 0;
+            bgmTimer = setInterval(() => {
+                if (!soundEnabled || !audioCtx || gameState !== 'PLAYING') return;
+                const now = audioCtx.currentTime;
+
+                if (mel[idx] > 0) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(mel[idx], now);
+                    gain.gain.setValueAtTime(0.04, now);
+                    gain.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.85);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(now); osc.stop(now + (speed / 1000) * 0.85);
+                }
+
+                if (harm[idx] > 0) {
+                    const oscH = audioCtx.createOscillator();
+                    const gainH = audioCtx.createGain();
+                    oscH.type = 'square';
+                    oscH.frequency.setValueAtTime(harm[idx], now);
+                    gainH.gain.setValueAtTime(0.025, now);
+                    gainH.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.85);
+                    oscH.connect(gainH); gainH.connect(audioCtx.destination);
+                    oscH.start(now); oscH.stop(now + (speed / 1000) * 0.85);
+                }
+
+                if (bass[idx] > 0) {
+                    const oscB = audioCtx.createOscillator();
+                    const gainB = audioCtx.createGain();
+                    oscB.type = 'triangle';
+                    oscB.frequency.setValueAtTime(bass[idx], now);
+                    gainB.gain.setValueAtTime(0.06, now);
+                    gainB.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.9);
+                    oscB.connect(gainB); gainB.connect(audioCtx.destination);
+                    oscB.start(now); oscB.stop(now + (speed / 1000) * 0.9);
+                }
+
+                idx = (idx + 1) % mel.length;
+            }, speed);
+        }
+
+        document.getElementById('btnSound').addEventListener('click', () => {
+            if (!soundEnabled) { 
+                initAudio(); 
+                document.getElementById('btnSound').innerText = '🎵 サウンド ON 中'; 
+            } else { 
+                soundEnabled = false; isBGMPlaying = false;
+                if (bgmTimer) clearInterval(bgmTimer); 
+                document.getElementById('btnSound').innerText = '🔇 サウンド OFF 中'; 
+            }
+        });
+
+        const hamster = {
+            x: 30, y: 120, baseWidth: 28, baseHeight: 24,
+            width: 28, height: 24, vx: 0, vy: 0,
+            baseSpeed: 3.2, speed: 3.2, baseJump: -9.5, jumpPower: -9.5,
+            swimPower: -4.8, gravity: 0.45, drag: 1.0, isGrounded: false, direction: 'right',
+            invincibleTimer: 0, bigTimer: 0, speedTimer: 0, swimAnimTimer: 0
+        };
+
+        let platforms = [], movingPlatforms = [], spikes = [], springs = [], items = [], powerSeeds = [], speedBerries = [], recoveryHearts = [], enemies = [], goal = { x: 0, y: 0, width: 30, height: 40 };
+
+        function loadStageData(world) {
+            currentWorld = world;
+            itemsCollected = 0;
+            bullets = []; bossBullets = []; boss = null; bgmPhase = 'NORMAL';
+
+            const btnJump = document.getElementById('btnJump');
+            const btnShot = document.getElementById('btnShot');
+            const dpadContainer = document.getElementById('dpadContainer');
+            const joystickArea = document.getElementById('joystickArea');
+
+            if (world === 3) {
+                btnJump.style.display = 'none';
+                btnShot.style.display = 'flex';
+                dpadContainer.style.display = 'none';
+                joystickArea.style.display = 'flex';
+            } else {
+                btnJump.style.display = 'flex';
+                btnShot.style.display = 'none';
+                dpadContainer.style.display = 'grid';
+                joystickArea.style.display = 'none';
+                btnJump.innerText = world === 1 ? 'JUMP' : 'SWIM';
+            }
+
+            document.getElementById('btnSelect11').className = world === 1 ? 'select-btn active' : 'select-btn';
+            document.getElementById('btnSelect12').className = world === 2 ? 'select-btn active' : 'select-btn';
+            document.getElementById('btnSelect13').className = world === 3 ? 'select-btn active' : 'select-btn';
+
+            if (world === 1) {
+                STAGE_WIDTH = 3600;
+                hamster.gravity = 0.45; hamster.drag = 1.0; hamster.baseSpeed = 3.2; hamster.speed = 3.2;
+                platforms = [
+                    { x: 0, y: 200, width: 300, height: 40 }, { x: 360, y: 170, width: 120, height: 20 },
+                    { x: 540, y: 130, width: 100, height: 20 }, { x: 700, y: 190, width: 220, height: 50 },
+                    { x: 1100, y: 180, width: 240, height: 60 }, { x: 1500, y: 140, width: 120, height: 20 },
+                    { x: 1680, y: 90, width: 100, height: 20 }, { x: 1860, y: 190, width: 200, height: 50 },
+                    { x: 2220, y: 170, width: 140, height: 20 }, { x: 2520, y: 190, width: 180, height: 50 },
+                    { x: 2800, y: 150, width: 120, height: 20 }, { x: 3050, y: 200, width: 550, height: 40 }
+                ];
+                movingPlatforms = [
+                    { x: 960, y: 160, width: 80, height: 16, minX: 940, maxX: 1080, minY: 160, maxY: 160, vx: 1.4, vy: 0 },
+                    { x: 1380, y: 150, width: 75, height: 16, minX: 1380, maxX: 1380, minY: 90, maxY: 180, vx: 0, vy: 1.2 },
+                    { x: 2100, y: 170, width: 80, height: 16, minX: 2080, maxX: 2200, minY: 170, maxY: 170, vx: 1.5, vy: 0 }
+                ];
+                spikes = [{ x: 800, y: 176, width: 40, height: 14 }, { x: 1200, y: 166, width: 50, height: 14 }, { x: 1940, y: 176, width: 40, height: 14 }];
+                springs = [{ x: 620, y: 176, width: 20, height: 14, bounce: -13.5 }, { x: 1880, y: 176, width: 20, height: 14, bounce: -14.0 }];
+                items = [
+                    { x: 120, y: 170, width: 16, height: 16, collected: false }, { x: 400, y: 140, width: 16, height: 16, collected: false },
+                    { x: 580, y: 100, width: 16, height: 16, collected: false }, { x: 850, y: 150, width: 16, height: 16, collected: false },
+                    { x: 1000, y: 120, width: 16, height: 16, collected: false }, { x: 1180, y: 150, width: 16, height: 16, collected: false },
+                    { x: 1540, y: 110, width: 16, height: 16, collected: false }, { x: 1720, y: 60, width: 16, height: 16, collected: false },
+                    { x: 1980, y: 150, width: 16, height: 16, collected: false }, { x: 2270, y: 140, width: 16, height: 16, collected: false },
+                    { x: 2570, y: 150, width: 16, height: 16, collected: false }, { x: 2850, y: 120, width: 16, height: 16, collected: false },
+                    { x: 3120, y: 170, width: 16, height: 16, collected: false }, { x: 3350, y: 170, width: 16, height: 16, collected: false }
+                ];
+                totalItems = 14;
+                powerSeeds = [{ x: 2580, y: 155, width: 20, height: 22, collected: false }];
+                speedBerries = [{ x: 420, y: 140, width: 18, height: 20, collected: false }, { x: 2120, y: 130, width: 18, height: 20, collected: false }];
+                recoveryHearts = [{ x: 1720, y: 35, width: 18, height: 18, collected: false }];
+                enemies = [
+                    { type: 'bug', x: 150, y: 182, width: 22, height: 18, startX: 100, endX: 250, speed: 1.2, dir: 1, alive: true },
+                    { type: 'bug', x: 740, y: 172, width: 22, height: 18, startX: 720, endX: 880, speed: 1.4, dir: 1, alive: true },
+                    { type: 'bug', x: 1150, y: 162, width: 22, height: 18, startX: 1120, endX: 1300, speed: 1.6, dir: -1, alive: true },
+                    { type: 'bug', x: 1900, y: 172, width: 22, height: 18, startX: 1880, endX: 2020, speed: 1.4, dir: 1, alive: true },
+                    { type: 'bug', x: 3100, y: 182, width: 22, height: 18, startX: 3080, endX: 3250, speed: 1.6, dir: -1, alive: true }
+                ];
+                goal = { x: 3500, y: 160, width: 30, height: 40 };
+            } else if (world === 2) {
+                STAGE_WIDTH = 3200;
+                hamster.gravity = 0.15; hamster.drag = 0.96; hamster.baseSpeed = 2.8; hamster.speed = 2.8;
+                platforms = [
+                    { x: 0, y: 210, width: 400, height: 30 }, { x: 480, y: 180, width: 140, height: 60 },
+                    { x: 700, y: 140, width: 120, height: 20 }, { x: 900, y: 210, width: 350, height: 30 },
+                    { x: 1350, y: 160, width: 150, height: 80 }, { x: 1600, y: 120, width: 100, height: 20 },
+                    { x: 1800, y: 210, width: 300, height: 30 }, { x: 2200, y: 170, width: 140, height: 70 },
+                    { x: 2450, y: 130, width: 110, height: 20 }, { x: 2650, y: 210, width: 550, height: 30 }
+                ];
+                movingPlatforms = []; spikes = []; springs = [];
+                items = [
+                    { x: 150, y: 180, width: 16, height: 16, collected: false }, { x: 520, y: 140, width: 16, height: 16, collected: false },
+                    { x: 740, y: 100, width: 16, height: 16, collected: false }, { x: 1050, y: 170, width: 16, height: 16, collected: false },
+                    { x: 1200, y: 120, width: 16, height: 16, collected: false }, { x: 1400, y: 120, width: 16, height: 16, collected: false },
+                    { x: 1640, y: 80, width: 16, height: 16, collected: false }, { x: 1880, y: 170, width: 16, height: 16, collected: false },
+                    { x: 2250, y: 130, width: 16, height: 16, collected: false }, { x: 2490, y: 90, width: 16, height: 16, collected: false },
+                    { x: 2750, y: 170, width: 16, height: 16, collected: false }, { x: 3000, y: 170, width: 16, height: 16, collected: false }
+                ];
+                totalItems = 12;
+                powerSeeds = [{ x: 2260, y: 140, width: 20, height: 22, collected: false }];
+                speedBerries = [{ x: 540, y: 100, width: 18, height: 20, collected: false }];
+                recoveryHearts = [{ x: 1640, y: 50, width: 18, height: 18, collected: false }];
+                enemies = [
+                    { type: 'crab', x: 200, y: 192, width: 22, height: 18, startX: 100, endX: 320, speed: 1.1, dir: 1, alive: true },
+                    { type: 'crab', x: 1000, y: 192, width: 22, height: 18, startX: 950, endX: 1100, speed: 1.3, dir: -1, alive: true },
+                    { type: 'jelly', x: 650, y: 100, width: 22, height: 24, startY: 50, endY: 150, speed: 0.8, dir: 1, alive: true },
+                    { type: 'jelly', x: 1520, y: 80, width: 22, height: 24, startY: 40, endY: 130, speed: 1.0, dir: 1, alive: true }
+                ];
+                goal = { x: 3100, y: 170, width: 30, height: 40 };
+            } else {
+                STAGE_WIDTH = 3800;
+                hamster.gravity = 0; hamster.drag = 1.0; hamster.baseSpeed = 3.5; hamster.speed = 3.5;
+                platforms = [
+                    { x: 500, y: 0, width: 110, height: 60 }, { x: 500, y: 180, width: 110, height: 60 },
+                    { x: 1200, y: 0, width: 140, height: 70 }, { x: 1200, y: 170, width: 140, height: 70 },
+                    { x: 1900, y: 50, width: 100, height: 140 }, { x: 2500, y: 0, width: 120, height: 80 },
+                    { x: 2500, y: 160, width: 120, height: 80 }
+                ];
+                movingPlatforms = [
+                    { x: 800, y: 0, width: 24, height: 100, minX: 800, maxX: 800, minY: 0, maxY: 80, vx: 0, vy: 1.5 },
+                    { x: 1600, y: 140, width: 24, height: 100, minX: 1600, maxX: 1600, minY: 60, maxY: 140, vx: 0, vy: -1.5 },
+                    { x: 2200, y: 0, width: 24, height: 100, minX: 2200, maxX: 2200, minY: 0, maxY: 80, vx: 0, vy: 1.8 }
+                ];
+                spikes = []; springs = [];
+                items = [
+                    { x: 300, y: 100, width: 16, height: 16, collected: false }, { x: 750, y: 120, width: 16, height: 16, collected: false },
+                    { x: 1050, y: 60, width: 16, height: 16, collected: false }, { x: 1500, y: 130, width: 16, height: 16, collected: false },
+                    { x: 2100, y: 80, width: 16, height: 16, collected: false }, { x: 2700, y: 120, width: 16, height: 16, collected: false }
+                ];
+                totalItems = 6;
+                powerSeeds = [{ x: 1600, y: 110, width: 20, height: 22, collected: false }];
+                speedBerries = []; recoveryHearts = [];
+                enemies = [
+                    { type: 'bee', x: 600, y: 120, width: 22, height: 18, startY: 40, endY: 180, speed: 1.5, dir: 1, alive: true },
+                    { type: 'fly', x: 950, y: 80, width: 20, height: 16, speed: 2.8, dir: -1, alive: true },
+                    { type: 'saw', x: 1250, y: 120, width: 24, height: 24, alive: true },
+                    { type: 'bee', x: 1700, y: 140, width: 22, height: 18, startY: 30, endY: 190, speed: 1.6, dir: 1, alive: true },
+                    { type: 'fly', x: 2100, y: 150, width: 20, height: 16, speed: 3.0, dir: -1, alive: true },
+                    { type: 'saw', x: 2550, y: 120, width: 24, height: 24, alive: true }
+                ];
+                boss = {
+                    x: 3300, y: 90, width: 60, height: 50,
+                    hp: 20, maxHp: 20, startY: 30, endY: 160, speed: 2.2, dir: 1,
+                    shootTimer: 0, alive: true
+                };
+                goal = { x: 3650, y: 100, width: 30, height: 40 };
+            }
+            if (soundEnabled && isBGMPlaying) startBGM();
+        }
+
+        function switchStage(world) {
+            loadStageData(world);
+            resetGame();
+        }
+
+        const btnLeft = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        const btnShot = document.getElementById('btnShot');
+        const btnJump = document.getElementById('btnJump');
+
+        const bindBtn = (btn, startFn, stopFn) => {
+            btn.addEventListener('touchstart', (e) => { 
+                if(e.cancelable) e.preventDefault(); 
+                e.stopPropagation(); 
+                initAudio(); 
+                startFn(); 
+            }, {passive:false});
+            btn.addEventListener('touchend', (e) => { 
+                if(e.cancelable) e.preventDefault(); 
+                e.stopPropagation(); 
+                stopFn(); 
+            }, {passive:false});
+            btn.addEventListener('touchcancel', (e) => { 
+                if(e.cancelable) e.preventDefault(); 
+                e.stopPropagation(); 
+                stopFn(); 
+            }, {passive:false});
+            btn.addEventListener('mousedown', (e) => { e.stopPropagation(); initAudio(); startFn(); });
+            btn.addEventListener('mouseup', (e) => { e.stopPropagation(); stopFn(); });
+            btn.addEventListener('mouseleave', (e) => { e.stopPropagation(); stopFn(); });
+        };
+
+        bindBtn(btnLeft, () => moveLeft = true, () => moveLeft = false);
+        bindBtn(btnRight, () => moveRight = true, () => moveRight = false);
+
+        const joystickArea = document.getElementById('joystickArea');
+        const joystickStick = document.getElementById('joystickStick');
+
+        const updateJoystick = (clientX, clientY) => {
+            const rect = joystickArea.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            let dx = clientX - centerX;
+            let dy = clientY - centerY;
+            const maxRadius = rect.width / 2 - 25;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > maxRadius) {
+                dx = (dx / dist) * maxRadius;
+                dy = (dy / dist) * maxRadius;
+            }
+
+            joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
+            joystickVector.x = dx / maxRadius;
+            joystickVector.y = dy / maxRadius;
+        };
+
+        const resetJoystick = () => {
+            joystickStick.style.transform = `translate(0px, 0px)`;
+            joystickVector = { x: 0, y: 0 };
+            joystickTouchId = null;
+        };
+
+        joystickArea.addEventListener('touchstart', (e) => {
+            if(e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            initAudio();
+            if (joystickTouchId === null) {
+                const touch = e.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                updateJoystick(touch.clientX, touch.clientY);
+            }
+        }, {passive:false});
+
+        joystickArea.addEventListener('touchmove', (e) => {
+            if(e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            if (joystickTouchId !== null) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                        break;
+                    }
+                }
+            }
+        }, {passive:false});
+
+        const handleJoystickEnd = (e) => {
+            if (joystickTouchId !== null) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        resetJoystick();
+                        break;
+                    }
+                }
+            }
+        };
+
+        joystickArea.addEventListener('touchend', handleJoystickEnd);
+        joystickArea.addEventListener('touchcancel', handleJoystickEnd);
+
+        window.addEventListener('keydown', (e) => {
+            if (currentWorld === 3) {
+                if (e.key === 'ArrowLeft') joystickVector.x = -1;
+                if (e.key === 'ArrowRight') joystickVector.x = 1;
+                if (e.key === 'ArrowUp') joystickVector.y = -1;
+                if (e.key === 'ArrowDown') joystickVector.y = 1;
+                if (e.key === 'z' || e.key === 'Z') shootBullet();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (currentWorld === 3) {
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') joystickVector.x = 0;
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') joystickVector.y = 0;
+            }
+        });
+
+        const shootBullet = () => {
+            if (currentWorld === 3 && gameState === 'PLAYING') {
+                bullets.push({
+                    x: hamster.x + hamster.width,
+                    y: hamster.y + hamster.height / 2 - 3,
+                    width: 10, height: 6, speed: 8.0
+                });
+                playSound('shot');
+            }
+        };
+        btnShot.addEventListener('touchstart', (e) => { 
+            if(e.cancelable) e.preventDefault(); 
+            e.stopPropagation(); 
+            initAudio(); 
+            shootBullet(); 
+        }, {passive:false});
+        btnShot.addEventListener('mousedown', (e) => { 
+            e.stopPropagation(); 
+            initAudio(); 
+            shootBullet(); 
+        });
+
+        const doJump = (e) => {
+            if(e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            initAudio();
+            if (gameState === 'CLEAR') {
+                if (currentWorld < 3) switchStage(currentWorld + 1);
+                else resetGame();
+                return;
+            } else if (gameState === 'GAMEOVER') {
+                resetGame();
+                return;
+            }
+
+            if (currentWorld === 1 && hamster.isGrounded) {
+                hamster.vy = hamster.jumpPower;
+                hamster.isGrounded = false;
+                playSound('jump');
+            } else if (currentWorld === 2) {
+                hamster.vy = hamster.swimPower;
+                hamster.swimAnimTimer = 15;
+                playSound('swim');
+            }
+        };
+        btnJump.addEventListener('touchstart', doJump, {passive:false});
+        btnJump.addEventListener('mousedown', doJump);
+
+        function resetGame() {
+            lives = 3;
+            hamster.x = 30; hamster.y = 120; hamster.vx = 0; hamster.vy = 0;
+            hamster.invincibleTimer = 0; hamster.bigTimer = 0; hamster.speedTimer = 0;
+            hamster.width = hamster.baseWidth; hamster.height = hamster.baseHeight;
+            hamster.speed = hamster.baseSpeed;
+            moveLeft = false; moveRight = false; resetJoystick();
+            bullets = []; bossBullets = []; bgmPhase = 'NORMAL';
+            camera.x = 0;
+            itemsCollected = 0;
+            items.forEach(i => i.collected = false);
+            powerSeeds.forEach(p => p.collected = false);
+            speedBerries.forEach(s => s.collected = false);
+            recoveryHearts.forEach(h => h.collected = false);
+            enemies.forEach(e => { e.alive = true; if(e.startX) e.x = e.startX; if(e.startY) e.y = e.startY; });
+            if (boss) { boss.alive = true; boss.hp = boss.maxHp; boss.y = boss.startY; }
+            gameState = 'PLAYING';
+            if (soundEnabled && isBGMPlaying) startBGM();
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            let isMoving = false;
+
+            if (currentWorld === 3) {
+                hamster.vx = joystickVector.x * hamster.speed;
+                hamster.vy = joystickVector.y * hamster.speed;
+
+                if (Math.abs(joystickVector.x) > 0.1 || Math.abs(joystickVector.y) > 0.1) isMoving = true;
+
+                if (!boss || camera.x < boss.x - 300) {
+                    camera.x += 1.3;
+                }
+                if (hamster.x < camera.x) hamster.x = camera.x;
+
+                let nextPhase = bgmPhase;
+                if (camera.x >= 2800 && camera.x < 3000) {
+                    nextPhase = 'WARNING';
+                    if (popupTimer === 0 && bgmPhase !== 'WARNING') {
+                        popupText = '⚠️ WARNING !! BOSS APPROACHING'; popupTimer = 90;
+                    }
+                } else if (camera.x >= 3000) {
+                    nextPhase = 'BOSS';
+                }
+
+                if (nextPhase !== bgmPhase) {
+                    bgmPhase = nextPhase;
+                    if (soundEnabled) startBGM();
+                }
+
+            } else {
+                if (moveLeft) {
+                    hamster.vx = -hamster.speed; hamster.direction = 'left'; isMoving = true;
+                } else if (moveRight) {
+                    hamster.vx = hamster.speed; hamster.direction = 'right'; isMoving = true;
+                } else {
+                    if (currentWorld === 1) hamster.vx = 0;
+                    else { hamster.vx *= hamster.drag; if (Math.abs(hamster.vx) < 0.1) hamster.vx = 0; }
+                }
+
+                hamster.vy += hamster.gravity;
+                if (currentWorld === 2) hamster.vy *= hamster.drag;
+
+                camera.x = hamster.x - BASE_WIDTH / 2 + hamster.width / 2;
+            }
+
+            animTime += 0.25;
+
+            hamster.x += hamster.vx;
+            hamster.y += hamster.vy;
+
+            if (hamster.x < 0) hamster.x = 0;
+            if (hamster.y < 10) { hamster.y = 10; hamster.vy = 0; }
+            if (hamster.y > STAGE_HEIGHT - hamster.height - 10) {
+                if (currentWorld === 3) hamster.y = STAGE_HEIGHT - hamster.height - 10;
+            }
+
+            if (hamster.invincibleTimer > 0) hamster.invincibleTimer--;
+
+            if (hamster.bigTimer > 0) {
+                hamster.bigTimer--; hamster.width = hamster.baseWidth * 1.8; hamster.height = hamster.baseHeight * 1.8;
+                if (hamster.bigTimer === 0) { hamster.width = hamster.baseWidth; hamster.height = hamster.baseHeight; }
+            }
+
+            if (hamster.speedTimer > 0) {
+                hamster.speedTimer--; hamster.speed = hamster.baseSpeed * 1.5;
+                if (hamster.speedTimer === 0) hamster.speed = hamster.baseSpeed;
+            }
+
+            if (popupTimer > 0) popupTimer--;
+
+            if (camera.x < 0) camera.x = 0;
+            if (camera.x > STAGE_WIDTH - BASE_WIDTH) camera.x = STAGE_WIDTH - BASE_WIDTH;
+
+            movingPlatforms.forEach(p => {
+                p.x += p.vx; p.y += p.vy;
+                if (p.x <= p.minX || p.x >= p.maxX) p.vx *= -1;
+                if (p.y <= p.minY || p.y >= p.maxY) p.vy *= -1;
+            });
+
+            spikes.forEach(spike => {
+                if (isColliding(hamster, spike) && hamster.invincibleTimer === 0) {
+                    lives--; hamster.invincibleTimer = 60; hamster.vy = -5; playSound('damage');
+                    if (lives <= 0) gameState = 'GAMEOVER';
+                }
+            });
+
+            springs.forEach(spring => {
+                if (isColliding(hamster, spring) && hamster.vy >= 0) {
+                    hamster.vy = spring.bounce;
+                    playSound('jump');
+                }
+            });
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let b = bullets[i];
+                b.x += b.speed;
+
+                if (b.x > camera.x + BASE_WIDTH) { bullets.splice(i, 1); continue; }
+
+                enemies.forEach(e => {
+                    if (e.alive && isColliding(b, e)) {
+                        e.alive = false; score += 200; playSound('hit');
+                        bullets.splice(i, 1);
+                    }
+                });
+
+                if (boss && boss.alive && isColliding(b, boss)) {
+                    boss.hp--; score += 100; playSound('hit');
+                    bullets.splice(i, 1);
+                    if (boss.hp <= 0) {
+                        boss.alive = false; score += 10000; playSound('clear');
+                        gameState = 'CLEAR';
+                    }
+                }
+            }
+
+            if (boss && boss.alive && hamster.x > boss.x - 380) {
+                boss.y += boss.speed * boss.dir;
+                if (boss.y <= boss.startY) { boss.y = boss.startY; boss.dir = 1; }
+                else if (boss.y >= boss.endY) { boss.y = boss.endY; boss.dir = -1; }
+
+                boss.shootTimer++;
+                if (boss.shootTimer > 50) {
+                    boss.shootTimer = 0;
+                    bossBullets.push({
+                        x: boss.x, y: boss.y + boss.height / 2,
+                        width: 12, height: 6, vx: -4.5, vy: (hamster.y - boss.y) * 0.02
+                    });
+                }
+
+                if (isColliding(hamster, boss) && hamster.invincibleTimer === 0) {
+                    lives--; hamster.invincibleTimer = 60; playSound('damage');
+                    if (lives <= 0) gameState = 'GAMEOVER';
+                }
+            }
+
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                let bb = bossBullets[i];
+                bb.x += bb.vx; bb.y += bb.vy;
+
+                if (isColliding(hamster, bb) && hamster.invincibleTimer === 0) {
+                    lives--; hamster.invincibleTimer = 60; playSound('damage');
+                    bossBullets.splice(i, 1);
+                    if (lives <= 0) gameState = 'GAMEOVER';
+                } else if (bb.x < camera.x - 20) {
+                    bossBullets.splice(i, 1);
+                }
+            }
+
+            const allPlatforms = [...platforms, ...movingPlatforms];
+            allPlatforms.forEach(p => {
+                if (isColliding(hamster, p)) {
+                    if (currentWorld === 3) {
+                        if (hamster.invincibleTimer === 0 && hamster.bigTimer === 0) {
+                            lives--; hamster.invincibleTimer = 60; playSound('damage');
+                            if (lives <= 0) gameState = 'GAMEOVER';
+                        }
+                    } else if (hamster.y + hamster.height >= p.y && hamster.y + hamster.height <= p.y + p.height + hamster.vy) {
+                        if (hamster.vy >= 0) {
+                            hamster.isGrounded = true; hamster.vy = 0; hamster.y = p.y - hamster.height;
+                        }
+                    }
+                }
+            });
+
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                if (enemy.type === 'bug' || enemy.type === 'crab') {
+                    enemy.x += enemy.speed * enemy.dir;
+                    if (enemy.x <= enemy.startX) { enemy.x = enemy.startX; enemy.dir = 1; }
+                    else if (enemy.x >= enemy.endX) { enemy.x = enemy.endX; enemy.dir = -1; }
+                } else if (enemy.type === 'jelly' || enemy.type === 'bee') {
+                    enemy.y += enemy.speed * enemy.dir;
+                    if (enemy.y <= enemy.startY) { enemy.y = enemy.startY; enemy.dir = 1; }
+                    else if (enemy.y >= enemy.endY) { enemy.y = enemy.endY; enemy.dir = -1; }
+                } else if (enemy.type === 'fly') {
+                    enemy.x += enemy.speed * enemy.dir;
+                }
+
+                if (isColliding(hamster, enemy)) {
+                    if (hamster.bigTimer > 0) { enemy.alive = false; score += 300; playSound('stomp'); }
+                    else if (currentWorld !== 3 && hamster.vy > 0 && hamster.y + hamster.height - hamster.vy <= enemy.y + 10) {
+                        enemy.alive = false; score += 200; hamster.vy = -5; playSound('stomp');
+                    } else if (hamster.invincibleTimer === 0) {
+                        lives--; hamster.invincibleTimer = 60; hamster.vy = -3; playSound('damage');
+                        if (lives <= 0) gameState = 'GAMEOVER';
+                    }
+                }
+            });
+
+            items.forEach(item => {
+                if (!item.collected && isColliding(hamster, item)) {
+                    item.collected = true; score += 100; itemsCollected++; playSound('item');
+                }
+            });
+
+            powerSeeds.forEach(seed => {
+                if (!seed.collected && isColliding(hamster, seed)) {
+                    seed.collected = true; score += 500; hamster.bigTimer = 480;
+                    popupText = 'BIG HAMSTER! 🌻'; popupTimer = 90; playSound('powerup');
+                }
+            });
+
+            if (currentWorld !== 3 && hamster.y > STAGE_HEIGHT + 30) {
+                lives--; playSound('damage');
+                if (lives <= 0) gameState = 'GAMEOVER';
+                else { hamster.x = Math.max(30, camera.x + 20); hamster.y = 80; hamster.vy = 0; hamster.invincibleTimer = 60; }
+            }
+
+            if (currentWorld !== 3 && isColliding(hamster, goal)) {
+                gameState = 'CLEAR'; playSound('clear');
+            }
+        }
+
+        function isColliding(a, b) {
+            return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+        }
+
+        function drawHamster(x, y, width, height, direction) {
+            if (hamster.invincibleTimer % 6 >= 3) return;
+            ctx.save();
+            ctx.translate(x + width / 2, y + height / 2);
+            let scaleFactor = width / hamster.baseWidth;
+            ctx.scale(scaleFactor, scaleFactor);
+            if (direction === 'left') ctx.scale(-1, 1);
+
+            if (currentWorld === 3) {
+                let wingFlap = Math.sin(animTime * 12) * 0.3;
+                ctx.save();
+                ctx.translate(-8, -4);
+                ctx.rotate(-0.3 + wingFlap);
+                let wingGrad = ctx.createLinearGradient(-15, -10, 10, 5);
+                wingGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+                wingGrad.addColorStop(0.5, 'rgba(186, 230, 253, 0.8)');
+                wingGrad.addColorStop(1, 'rgba(56, 189, 248, 0.3)');
+                ctx.fillStyle = wingGrad; ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.ellipse(-6, -6, 14, 7, -Math.PI / 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
+
+            let bodyGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 16);
+            bodyGrad.addColorStop(0, '#fef08a');
+            bodyGrad.addColorStop(0.5, '#f59e0b');
+            bodyGrad.addColorStop(1, '#b45309');
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath(); ctx.ellipse(0, 1, 15, 12, 0, 0, Math.PI * 2); ctx.fill();
+
+            let bellyGrad = ctx.createRadialGradient(4, 4, 1, 4, 3, 9);
+            bellyGrad.addColorStop(0, '#ffffff');
+            bellyGrad.addColorStop(1, '#fef08a');
+            ctx.fillStyle = bellyGrad;
+            ctx.beginPath(); ctx.ellipse(4, 3, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = '#f472b6'; ctx.strokeStyle = '#d97706'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(-9, -10, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(3, -10, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(8, -3, 3.2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(9.2, -4.2, 1.3, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = 'rgba(244, 114, 182, 0.75)'; ctx.beginPath(); ctx.arc(13, 1, 2.8, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = '#fbcfe8';
+            let swimArm = (currentWorld === 2 && hamster.swimAnimTimer > 0) ? Math.sin(animTime * 5) * 6 : Math.sin(animTime * 2) * 2;
+            ctx.beginPath();
+            ctx.arc(-7 + swimArm, 10, 3, 0, Math.PI * 2); ctx.arc(7 - swimArm, 10, 3, 0, Math.PI * 2); ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawEnemy(enemy) {
+            if (!enemy.alive) return;
+            ctx.save(); ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+            if (enemy.dir === -1) ctx.scale(-1, 1);
+
+            if (enemy.type === 'bug') {
+                let wiggle = Math.sin(animTime * 4) * 2;
+                let bugGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 11);
+                bugGrad.addColorStop(0, '#86efac'); bugGrad.addColorStop(0.6, '#22c55e'); bugGrad.addColorStop(1, '#14532d');
+                ctx.fillStyle = bugGrad;
+                ctx.beginPath(); ctx.arc(-6, wiggle, 7, 0, Math.PI * 2); 
+                ctx.arc(0, -wiggle, 7.5, 0, Math.PI * 2); 
+                ctx.arc(6, -1, 8, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(9, -3, 2.2, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(10, -3.8, 0.8, 0, Math.PI * 2); ctx.fill();
+
+            } else if (enemy.type === 'crab') {
+                let claw = Math.sin(animTime * 6) * 3;
+                let leg = Math.sin(animTime * 8) * 2;
+
+                let crabGrad = ctx.createRadialGradient(-2, -3, 2, 0, 0, 11);
+                crabGrad.addColorStop(0, '#fca5a5'); crabGrad.addColorStop(0.6, '#ef4444'); crabGrad.addColorStop(1, '#7f1d1d');
+                ctx.fillStyle = crabGrad;
+                ctx.beginPath(); ctx.ellipse(0, 2, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+                ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(-6, 6); ctx.lineTo(-11, 11 + leg);
+                ctx.moveTo(6, 6); ctx.lineTo(11, 11 - leg);
+                ctx.stroke();
+
+                ctx.fillStyle = '#ef4444'; 
+                ctx.beginPath(); ctx.arc(-9 - claw, -3, 4.5, 0, Math.PI * 2); ctx.arc(9 + claw, -3, 4.5, 0, Math.PI * 2); ctx.fill();
+
+            } else if (enemy.type === 'jelly') {
+                let pulse = Math.sin(animTime * 3);
+                let scaleY = 1 + pulse * 0.15;
+                let scaleX = 1 - pulse * 0.1;
+                ctx.scale(scaleX, scaleY);
+
+                let jellyGrad = ctx.createRadialGradient(0, -6, 2, 0, -2, 12);
+                jellyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+                jellyGrad.addColorStop(0.5, 'rgba(244, 114, 182, 0.85)');
+                jellyGrad.addColorStop(1, 'rgba(192, 38, 211, 0.7)');
+
+                ctx.fillStyle = jellyGrad;
+                ctx.beginPath(); ctx.arc(0, -3, 11, Math.PI, 0); ctx.fill();
+                ctx.beginPath(); ctx.arc(0, -3, 11, 0, Math.PI); ctx.fill();
+
+                ctx.strokeStyle = '#f472b6'; ctx.lineWidth = 2;
+                for (let i = -7; i <= 7; i += 3.5) {
+                    let wave = Math.sin(animTime * 5 + i) * 3;
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.quadraticCurveTo(i + wave, 6, i - wave, 12);
+                    ctx.stroke();
+                }
+
+            } else if (enemy.type === 'bee') {
+                let wing = Math.sin(animTime * 12) * 5;
+                let beeGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 10);
+                beeGrad.addColorStop(0, '#fef08a'); beeGrad.addColorStop(0.7, '#f59e0b'); beeGrad.addColorStop(1, '#b45309');
+                ctx.fillStyle = beeGrad; ctx.beginPath(); ctx.ellipse(0, 0, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#0f172a'; ctx.fillRect(-2, -7, 3, 14); ctx.fillRect(3, -6, 2, 12);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; ctx.beginPath(); ctx.ellipse(-2, -8 + wing, 5, 7, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+
+            } else if (enemy.type === 'fly') {
+                let wing = Math.sin(animTime * 15) * 4;
+                ctx.fillStyle = '#475569'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; ctx.beginPath(); ctx.arc(0, -6 + wing, 3.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(4, -2, 2.5, 0, Math.PI * 2); ctx.fill();
+
+            } else if (enemy.type === 'saw') {
+                ctx.rotate(animTime * 6);
+                let sawGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 14);
+                sawGrad.addColorStop(0, '#f8fafc'); sawGrad.addColorStop(0.5, '#94a3b8'); sawGrad.addColorStop(1, '#334155');
+                ctx.fillStyle = sawGrad; ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function drawBoss() {
+            if (!boss || !boss.alive) return;
+            ctx.save();
+            
+            let centerX = boss.x + boss.width / 2;
+            let centerY = boss.y + boss.height / 2 + Math.sin(animTime * 3) * 4;
+            ctx.translate(centerX, centerY);
+
+            let wingFlap = Math.sin(animTime * 16) * 0.4;
+
+            ctx.save();
+            ctx.translate(4, -12);
+            ctx.rotate(-0.5 + wingFlap);
+            let wingGradBack = ctx.createLinearGradient(-15, -20, 15, 0);
+            wingGradBack.addColorStop(0, 'rgba(56, 189, 248, 0.9)');
+            wingGradBack.addColorStop(0.5, 'rgba(186, 230, 253, 0.6)');
+            wingGradBack.addColorStop(1, 'rgba(14, 165, 233, 0.1)');
+            ctx.fillStyle = wingGradBack;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.ellipse(-12, -12, 22, 9, -Math.PI / 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.restore();
+
+            let stingGrad = ctx.createLinearGradient(20, 0, 38, 0);
+            stingGrad.addColorStop(0, '#991b1b');
+            stingGrad.addColorStop(0.5, '#ef4444');
+            stingGrad.addColorStop(1, '#fca5a5');
+            ctx.fillStyle = stingGrad;
+            ctx.beginPath();
+            ctx.moveTo(22, -3);
+            ctx.lineTo(38, 2);
+            ctx.lineTo(22, 7);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 1; ctx.stroke();
+
+            let bodyGrad = ctx.createRadialGradient(-6, -6, 2, 0, 2, 28);
+            bodyGrad.addColorStop(0, '#fef08a');
+            bodyGrad.addColorStop(0.4, '#f59e0b');
+            bodyGrad.addColorStop(0.85, '#b45309');
+            bodyGrad.addColorStop(1, '#78350f');
+            
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath(); ctx.ellipse(0, 2, 27, 19, 0, 0, Math.PI * 2); ctx.fill();
+
+            let stripeGrad = ctx.createLinearGradient(0, -18, 0, 20);
+            stripeGrad.addColorStop(0, '#334155');
+            stripeGrad.addColorStop(0.5, '#0f172a');
+            stripeGrad.addColorStop(1, '#020617');
+            ctx.fillStyle = stripeGrad;
+
+            [-7, 3, 13].forEach((offX, idx) => {
+                let w = idx === 2 ? 4.5 : 5.5;
+                ctx.beginPath(); ctx.ellipse(offX, 2, w, 17 - idx * 1.2, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.ellipse(offX - 1, 2, w * 0.6, (17 - idx * 1.2) * 0.8, 0, Math.PI * 0.6, Math.PI * 1.4); ctx.stroke();
+            });
+
+            ctx.save();
+            ctx.translate(-4, -10);
+            ctx.rotate(0.2 - wingFlap);
+            let wingGradFront = ctx.createLinearGradient(-15, -25, 20, 0);
+            wingGradFront.addColorStop(0, 'rgba(186, 230, 253, 0.95)');
+            wingGradFront.addColorStop(0.6, 'rgba(56, 189, 248, 0.7)');
+            wingGradFront.addColorStop(1, 'rgba(14, 165, 233, 0.2)');
+            ctx.fillStyle = wingGradFront;
+            ctx.strokeStyle = '#bae6fd'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.ellipse(-14, -14, 25, 10, -Math.PI / 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(-2, -2); ctx.lineTo(-24, -20); ctx.stroke();
+            ctx.restore();
+
+            let headGrad = ctx.createRadialGradient(-16, -4, 1, -14, 0, 12);
+            headGrad.addColorStop(0, '#475569'); headGrad.addColorStop(1, '#0f172a');
+            ctx.fillStyle = headGrad;
+            ctx.beginPath(); ctx.ellipse(-16, 0, 10, 11, 0, 0, Math.PI * 2); ctx.fill();
+
+            ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 8;
+            let visorGrad = ctx.createLinearGradient(-22, -4, -12, 4);
+            visorGrad.addColorStop(0, '#fca5a5');
+            visorGrad.addColorStop(0.5, '#ef4444');
+            visorGrad.addColorStop(1, '#991b1b');
+            ctx.fillStyle = visorGrad;
+            ctx.beginPath(); ctx.ellipse(-18, 0, 5.5, 4.5, -0.2, 0, Math.PI * 2); ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(-19.5, -1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+
+            ctx.strokeStyle = '#334155'; ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(-23, -19); ctx.stroke();
+            ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 5;
+            ctx.beginPath(); ctx.arc(-23, -19, 2.8, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.restore();
+
+            let barX = boss.x - 5;
+            let barY = boss.y - 28;
+            let barW = boss.width + 10;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.fillRect(barX, barY, barW, 6);
+            
+            let hpRatio = Math.max(0, boss.hp / boss.maxHp);
+            let hpGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+            hpGrad.addColorStop(0, '#ef4444'); hpGrad.addColorStop(1, '#f59e0b');
+            ctx.fillStyle = hpGrad;
+            ctx.fillRect(barX, barY, barW * hpRatio, 6);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, 6);
+        }
+
+        function drawUI() {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; ctx.fillRect(5, 5, 390, 26);
+            ctx.strokeStyle = '#f59e0b'; ctx.strokeRect(5, 5, 390, 26);
+            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif';
+            ctx.fillText(`ハムの大冒険  WORLD 1-${currentWorld}`, 10, 22);
+            ctx.fillText(`SCORE: ${String(score).padStart(6, '0')}`, 155, 22);
+            ctx.fillStyle = '#ef4444'; ctx.fillText('♥'.repeat(lives), 270, 22);
+            ctx.fillStyle = '#ffffff'; ctx.fillText(`🍙 ${itemsCollected}/${totalItems}`, 330, 22);
+
+            if (popupTimer > 0) {
+                ctx.fillStyle = bgmPhase === 'WARNING' ? '#ef4444' : '#f59e0b';
+                ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(popupText, BASE_WIDTH / 2, 60); ctx.textAlign = 'start';
+            }
+        }
+
+        function draw() {
+            ctx.save();
+            ctx.scale(SCALE, SCALE);
+
+            if (currentWorld === 1) {
+                let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+                bgGradient.addColorStop(0, '#38bdf8'); bgGradient.addColorStop(0.7, '#bae6fd'); bgGradient.addColorStop(1, '#4ade80');
+                ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+            } else if (currentWorld === 2) {
+                let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+                bgGradient.addColorStop(0, '#0284c7'); bgGradient.addColorStop(0.6, '#0369a1'); bgGradient.addColorStop(1, '#0f172a');
+                ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.beginPath();
+                ctx.moveTo(50, 0); ctx.lineTo(120, BASE_HEIGHT); ctx.lineTo(180, BASE_HEIGHT); ctx.lineTo(90, 0); ctx.fill();
+            } else {
+                let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+                if (camera.x < 2800) {
+                    bgGradient.addColorStop(0, '#0284c7'); bgGradient.addColorStop(0.5, '#38bdf8'); bgGradient.addColorStop(1, '#f0f9ff');
+                } else if (camera.x < 3000) {
+                    bgGradient.addColorStop(0, '#1e1b4b'); bgGradient.addColorStop(0.6, '#312e81'); bgGradient.addColorStop(1, '#4338ca');
+                } else {
+                    bgGradient.addColorStop(0, '#020617'); bgGradient.addColorStop(0.6, '#0f172a'); bgGradient.addColorStop(1, '#1e1b4b');
+                }
+                ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+            }
+
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            if (currentWorld === 3 && camera.x >= 2800) {
+                ctx.fillStyle = '#ffffff';
+                stars.forEach(s => {
+                    ctx.globalAlpha = Math.sin(animTime * 2 + s.alpha * 10) * 0.5 + 0.5;
+                    ctx.fillRect(s.x, s.y, s.size, s.size);
+                });
+                ctx.globalAlpha = 1.0;
+            }
+
+            if (currentWorld === 2) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                bubbles.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill(); });
+            }
+
+            platforms.forEach(p => {
+                if (currentWorld === 3) {
+                    let blockGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
+                    blockGrad.addColorStop(0, '#64748b'); blockGrad.addColorStop(1, '#334155');
+                    ctx.fillStyle = blockGrad;
+                    ctx.beginPath(); ctx.roundRect(p.x, p.y, p.width, p.height, 6); ctx.fill();
+                    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1; ctx.stroke();
+                } else {
+                    let grassGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + 6);
+                    grassGrad.addColorStop(0, '#4ade80'); grassGrad.addColorStop(1, '#16a34a');
+                    ctx.fillStyle = grassGrad; ctx.fillRect(p.x, p.y, p.width, 6);
+
+                    let dirtGrad = ctx.createLinearGradient(p.x, p.y + 6, p.x, p.y + p.height);
+                    dirtGrad.addColorStop(0, '#92400e'); dirtGrad.addColorStop(1, '#451a03');
+                    ctx.fillStyle = dirtGrad; ctx.fillRect(p.x, p.y + 6, p.width, p.height - 6);
+                }
+            });
+
+            movingPlatforms.forEach(p => {
+                let mGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
+                mGrad.addColorStop(0, '#fbbf24'); mGrad.addColorStop(1, '#d97706');
+                ctx.fillStyle = mGrad; ctx.fillRect(p.x, p.y, p.width, p.height);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(p.x, p.y, p.width, p.height);
+            });
+
+            spikes.forEach(spike => {
+                let spikeGrad = ctx.createLinearGradient(spike.x, spike.y, spike.x, spike.y + spike.height);
+                spikeGrad.addColorStop(0, '#f87171'); spikeGrad.addColorStop(1, '#991b1b');
+                ctx.fillStyle = spikeGrad;
+                for (let i = 0; i < Math.floor(spike.width / 10); i++) {
+                    ctx.beginPath(); ctx.moveTo(spike.x + i * 10, spike.y + spike.height);
+                    ctx.lineTo(spike.x + i * 10 + 5, spike.y); ctx.lineTo(spike.x + (i + 1) * 10, spike.y + spike.height); ctx.fill();
+                }
+            });
+
+            springs.forEach(s => { 
+                ctx.fillStyle = '#f59e0b'; ctx.fillRect(s.x, s.y + 8, s.width, 6); 
+                ctx.fillStyle = '#cbd5e1'; ctx.fillRect(s.x + 2, s.y, s.width - 4, 8); 
+            });
+
+            items.forEach(item => {
+                if (!item.collected) {
+                    ctx.fillStyle = '#ffffff'; 
+                    ctx.beginPath(); ctx.moveTo(item.x + 8, item.y); ctx.lineTo(item.x + 16, item.y + 16); ctx.lineTo(item.x, item.y + 16); ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = '#0f172a'; ctx.fillRect(item.x + 5, item.y + 9, 6, 7);
+                }
+            });
+
+            powerSeeds.forEach(seed => {
+                if (!seed.collected) {
+                    ctx.save(); ctx.translate(seed.x + seed.width/2, seed.y + seed.height/2);
+                    let seedGrad = ctx.createRadialGradient(-2, -2, 1, 0, 0, 10);
+                    seedGrad.addColorStop(0, '#fef08a'); seedGrad.addColorStop(1, '#b45309');
+                    ctx.fillStyle = seedGrad; ctx.beginPath(); ctx.ellipse(0, 0, 9, 11, Math.PI/8, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(-3, -7, 2, 14); ctx.fillRect(1, -7, 2, 14); ctx.restore();
+                }
+            });
+
+            bullets.forEach(b => {
+                ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 6;
+                let bGrad = ctx.createLinearGradient(b.x, b.y, b.x + b.width, b.y);
+                bGrad.addColorStop(0, '#ffffff'); bGrad.addColorStop(1, '#f59e0b');
+                ctx.fillStyle = bGrad;
+                ctx.beginPath(); ctx.ellipse(b.x + 5, b.y + 3, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+
+            bossBullets.forEach(bb => {
+                ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 6;
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath(); ctx.arc(bb.x, bb.y, 4.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bb.x - 1, bb.y - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+
+            enemies.forEach(enemy => drawEnemy(enemy));
+            drawBoss();
+
+            if (currentWorld !== 3) {
+                ctx.fillStyle = '#b45309'; ctx.fillRect(goal.x, goal.y + 10, goal.width, goal.height - 10);
+                ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(goal.x - 5, goal.y + 10); ctx.lineTo(goal.x + goal.width / 2, goal.y - 5); ctx.lineTo(goal.x + goal.width + 5, goal.y + 10); ctx.fill();
+            }
+
+            drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
+
+            ctx.restore();
+
+            drawUI();
+
+            if (gameState === 'GAMEOVER') {
+                ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+                ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER 😭', BASE_WIDTH/2, 110);
+                ctx.font = '13px sans-serif'; ctx.fillText('ボタンを押して再挑戦', BASE_WIDTH/2, 145);
+                ctx.textAlign = 'start';
+            } else if (gameState === 'CLEAR') {
+                ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+                ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(currentWorld === 3 ? '🎉 ALL STAGE CLEAR! 🎉' : `WORLD 1-${currentWorld} CLEAR! 🎉`, BASE_WIDTH/2, 90);
+                ctx.fillStyle = '#ffffff'; ctx.font = '14px sans-serif';
+                ctx.fillText(`SCORE: ${score}`, BASE_WIDTH/2, 120);
+                ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 14px sans-serif';
+                ctx.fillText(currentWorld < 3 ? `▶ ボタンを押して WORLD 1-${currentWorld + 1} へ！` : '🏆 全ステージ完全制覇！おめでとう！', BASE_WIDTH/2, 160);
+                ctx.textAlign = 'start';
+            }
+
+            ctx.restore();
+        }
+
+        function gameLoop() {
+            update(); draw(); requestAnimationFrame(gameLoop);
+        }
+
+        loadStageData(1);
+        gameLoop();
+    </script>
+</body>
+</html>
