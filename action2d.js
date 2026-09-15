@@ -378,11 +378,11 @@ function loadStageData(stageId) {
             { type: 'bike', x: 2450, y: 170, width: 35, height: 40 }
         ];
 
-        // 🛍️ 5. 風に舞うレジ袋（目くらまし）
+        // 🛍️ 5. 風に舞うレジ袋（画面上を独立して舞う設定）
         trashBags2D = [
-            { x: 400, y: 80, speed: 1.2, radius: 15 },
-            { x: 1300, y: 100, speed: 1.5, radius: 18 },
-            { x: 2100, y: 70, speed: 1.1, radius: 16 }
+            { x: 50, y: 60, speed: 1.2, radius: 15, baseOffsetY: 0 },
+            { x: 180, y: 90, speed: 1.6, radius: 18, baseOffsetY: 2 },
+            { x: 320, y: 50, speed: 1.1, radius: 14, baseOffsetY: 4 }
         ];
 
         // 🛹 3. 後方からの暴走スケボー用初期設定
@@ -581,6 +581,12 @@ function update2D() {
                 skateboardEnemy.active = false; skateboardTimer = 0;
             }
         }
+
+        // 🛍️ 5. レジ袋の位置・移動計算（画面内をフワフワ巡回）
+        trashBags2D.forEach(bag => {
+            bag.x += bag.speed;
+            if (bag.x > BASE_WIDTH + 30) bag.x = -30;
+        });
     }
 
     let isMoving = false;
@@ -1234,17 +1240,18 @@ function draw2D() {
 
     drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
 
-    // 🛍️ 5. 風に舞うレジ袋描画（画面全体の手前に重ねる）
+    ctx.restore(); // カメラのスクロールを解除（以降は画面固定描画）
+
+    // 🛍️ 5. 風に舞うレジ袋（画面の手前に重なって目くらましにする）
     if (currentStageId === 4) {
         trashBags2D.forEach(bag => {
-            bag.x += bag.speed; if (bag.x > STAGE_WIDTH) bag.x = 0;
-            let bagY = bag.y + Math.sin(animTime * 0.8 + bag.x) * 20;
+            let bagY = bag.y + Math.sin(animTime * 0.8 + bag.x + bag.baseOffsetY) * 20;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-            ctx.beginPath(); ctx.arc(bag.x, bagY, bag.radius, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); 
+            ctx.arc(bag.x, bagY, bag.radius, 0, Math.PI * 2); 
+            ctx.fill();
         });
     }
-
-    ctx.restore();
 
     drawDarknessOverlay();
 
