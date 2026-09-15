@@ -403,11 +403,11 @@ function loadStageData(stageId) {
             { type: 'bike', x: 2450, y: 170, width: 35, height: 40 }
         ];
 
-        // 🛍️ 5. 画面手前を風で舞い散る目くらましレジ袋（画面固定X/Y座標で初期化）
+        // 🛍️ 5. 画面手前を風で舞い散る目くらましレジ袋（小型化サイズに調整）
         trashBags2D = [
-            { screenX: 420, baseY: 50, speed: 2.2, frame: 0, scale: 0.35, phase: 0 },
-            { screenX: 480, baseY: 120, speed: 1.8, frame: 8, scale: 0.45, phase: 2 },
-            { screenX: 550, baseY: 80, speed: 2.5, frame: 16, scale: 0.38, phase: 4 }
+            { screenX: 420, baseY: 50, speed: 2.2, frame: 0, scale: 0.20, phase: 0 },
+            { screenX: 480, baseY: 110, speed: 1.8, frame: 8, scale: 0.25, phase: 2 },
+            { screenX: 550, baseY: 70, speed: 2.5, frame: 16, scale: 0.18, phase: 4 }
         ];
 
         // 🛹 3. 後方からの暴走スケボー用初期設定
@@ -607,14 +607,14 @@ function update2D() {
             }
         }
 
-        // 🛍️ 5. レジ袋の画面移動＆コマ送りアニメーション（右から左へ風に乗って舞う）
+        // 🛍️ 5. レジ袋の画面移動＆コマ送りアニメーション（小さめサイズを再生成）
         trashBags2D.forEach(bag => {
             bag.screenX -= bag.speed;
-            bag.frame = (bag.frame + 0.25) % 32; // 32コマのアニメーションループ
-            if (bag.screenX < -80) {
-                bag.screenX = BASE_WIDTH + Math.random() * 100 + 40;
-                bag.baseY = Math.random() * 120 + 30;
-                bag.scale = 0.3 + Math.random() * 0.2;
+            bag.frame = (bag.frame + 0.25) % 32; 
+            if (bag.screenX < -60) {
+                bag.screenX = BASE_WIDTH + Math.random() * 80 + 30;
+                bag.baseY = Math.random() * 110 + 20;
+                bag.scale = 0.16 + Math.random() * 0.10; // 小ぶりなサイズでランダムリスポーン
             }
         });
     }
@@ -1272,7 +1272,7 @@ function draw2D() {
 
     ctx.restore(); // カメラのスクロールを解除（画面固定描画へ切替）
 
-    // 🛍️ 5. 画像アセットを使った風に舞うレジ袋（画面手前に重なって表示）
+    // 🛍️ 5. 小型化された風に舞うレジ袋（画面手前に重なって表示）
     if (currentStageId === 4 && processedBagCanvas) {
         trashBags2D.forEach(bag => {
             const frameIdx = Math.floor(bag.frame);
