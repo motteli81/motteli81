@@ -65,6 +65,12 @@ let bossBullets = [];
 let boss = null;
 let bgmPhase = 'NORMAL';
 
+// 🎯 2-1 追加要素用の変数（障害物・スケボー・レジ袋）
+let obstacles2D = [];
+let trashBags2D = [];
+let skateboardTimer = 0;
+let skateboardEnemy = { active: false, x: -50, y: 192, width: 30, height: 18, speed: 7.0 };
+
 // 🎯 暗躍演出用パラメータ
 let golgoEventTriggered = false;
 let golgoEventTimer = 0;
@@ -237,6 +243,7 @@ let platforms = [], movingPlatforms = [], spikes = [], springs = [], items = [],
 function loadStageData(stageId) {
     currentStageId = stageId; itemsCollected = 0; bullets = []; bossBullets = []; boss = null; bgmPhase = 'NORMAL'; clams = []; currentZones = [];
     golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
+    obstacles2D = []; trashBags2D = []; skateboardTimer = 0; skateboardEnemy.active = false;
 
     const btnJump = document.getElementById('btnJump'); const btnShot = document.getElementById('btnShot');
     const dpadContainer = document.getElementById('dpadContainer'); const joystickArea = document.getElementById('joystickArea');
@@ -360,11 +367,28 @@ function loadStageData(stageId) {
     } else if (stageId === 4) { 
         STAGE_WIDTH = 3200; hamster.gravity = 0.45; hamster.drag = 0.98; hamster.baseSpeed = 3.6; hamster.speed = 3.6;
         
-        // 🛣️ 2-1: 穴なしの完全フラット一本道
-        platforms = [
-            { x: 0, y: 210, width: 3200, height: 30 }
-        ];
+        platforms = [{ x: 0, y: 210, width: 3200, height: 30 }];
         movingPlatforms = []; spikes = []; springs = [];
+        
+        // 🚲 1. 街の障害物（自転車・ゴミ箱）
+        obstacles2D = [
+            { type: 'trash', x: 650, y: 180, width: 22, height: 30 },
+            { type: 'bike', x: 1250, y: 170, width: 35, height: 40 },
+            { type: 'trash', x: 1950, y: 180, width: 22, height: 30 },
+            { type: 'bike', x: 2450, y: 170, width: 35, height: 40 }
+        ];
+
+        // 🛍️ 5. 風に舞うレジ袋（目くらまし）
+        trashBags2D = [
+            { x: 400, y: 80, speed: 1.2, radius: 15 },
+            { x: 1300, y: 100, speed: 1.5, radius: 18 },
+            { x: 2100, y: 70, speed: 1.1, radius: 16 }
+        ];
+
+        // 🛹 3. 後方からの暴走スケボー用初期設定
+        skateboardTimer = 0;
+        skateboardEnemy = { active: false, x: -50, y: 192, width: 30, height: 18, speed: 7.0 };
+
         items = [
             { x: 300, y: 170, width: 14, height: 18, collected: false }, { x: 600, y: 170, width: 14, height: 18, collected: false },
             { x: 900, y: 170, width: 14, height: 18, collected: false }, { x: 1200, y: 170, width: 14, height: 18, collected: false },
@@ -377,18 +401,16 @@ function loadStageData(stageId) {
         speedBerries = [{ x: 800, y: 170, width: 18, height: 20, collected: false }]; 
         recoveryHearts = [{ x: 2000, y: 170, width: 18, height: 18, collected: false }];
 
-        // 🐱 街中ステージ：野良猫（cat）＆ カラス（crow）敵ラッシュ
         enemies = [
-            // 地上を走る野良猫
             { type: 'cat', x: 500, y: 184, width: 28, height: 26, startX: 350, endX: 750, speed: 2.2, dir: -1, alive: true },
             { type: 'cat', x: 1100, y: 184, width: 28, height: 26, startX: 950, endX: 1350, speed: 2.5, dir: 1, alive: true },
             { type: 'cat', x: 1800, y: 184, width: 28, height: 26, startX: 1600, endX: 2050, speed: 2.8, dir: -1, alive: true },
             { type: 'cat', x: 2500, y: 184, width: 28, height: 26, startX: 2300, endX: 2750, speed: 3.0, dir: 1, alive: true },
 
-            // 空中を急降下するカラス
-            { type: 'crow', x: 800, y: 60, width: 24, height: 20, startX: 650, endX: 950, speed: 1.5, dir: -1, alive: true },
-            { type: 'crow', x: 1500, y: 50, width: 24, height: 20, startX: 1350, endX: 1700, speed: 1.8, dir: -1, alive: true },
-            { type: 'crow', x: 2200, y: 55, width: 24, height: 20, startX: 2000, endX: 2400, speed: 2.0, dir: -1, alive: true }
+            // 🐦‍⬛ 2. 超高速垂直ダイブ付きカラス
+            { type: 'crow', x: 800, y: 50, width: 24, height: 20, startX: 650, endX: 950, speed: 1.5, dir: -1, alive: true, isFastDive: true },
+            { type: 'crow', x: 1500, y: 40, width: 24, height: 20, startX: 1350, endX: 1700, speed: 1.8, dir: -1, alive: true, isFastDive: false },
+            { type: 'crow', x: 2200, y: 45, width: 24, height: 20, startX: 2000, endX: 2400, speed: 2.0, dir: -1, alive: true, isFastDive: true }
         ];
         goal = { x: 3100, y: 170, width: 30, height: 40 };
     }
@@ -500,6 +522,7 @@ function resetGame() {
     clams.forEach(c => c.seedCollected = false);
     if (boss) { boss.alive = true; boss.hp = boss.maxHp; boss.y = boss.startY; }
     golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
+    skateboardTimer = 0; skateboardEnemy.active = false;
     gameState = 'PLAYING';
     if (soundEnabled && isBGMPlaying) startBGM2D();
 }
@@ -540,6 +563,24 @@ function update2D() {
             if (golgoEventTimer > 130) start3DMode();
             return;
         }
+
+        // 🛹 3. 暴走スケボーの出現＆衝突判定
+        skateboardTimer++;
+        if (skateboardTimer > 240 && !skateboardEnemy.active) {
+            skateboardEnemy.active = true;
+            skateboardEnemy.x = camera.x - 60;
+            playSound2D('encounter');
+        }
+        if (skateboardEnemy.active) {
+            skateboardEnemy.x += skateboardEnemy.speed;
+            if (isColliding(hamster, skateboardEnemy) && hamster.invincibleTimer === 0) {
+                lives--; hamster.invincibleTimer = 60; hamster.vy = -5; playSound2D('damage');
+                if (lives <= 0) gameState = 'GAMEOVER';
+            }
+            if (skateboardEnemy.x > camera.x + BASE_WIDTH + 50) {
+                skateboardEnemy.active = false; skateboardTimer = 0;
+            }
+        }
     }
 
     let isMoving = false;
@@ -573,6 +614,16 @@ function update2D() {
 
     movingPlatforms.forEach(p => { p.x += p.vx; p.y += p.vy; if (p.x <= p.minX || p.x >= p.maxX) p.vx *= -1; if (p.y <= p.minY || p.y >= p.maxY) p.vy *= -1; });
     spikes.forEach(spike => { if (isColliding(hamster, spike) && hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; hamster.vy = -5; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; } });
+
+    // 🚲 1. 街の固定障害物（壁判定＆ノックバック）
+    if (currentStageId === 4) {
+        obstacles2D.forEach(ob => {
+            if (isColliding(hamster, ob)) {
+                if (hamster.vx > 0) hamster.x = ob.x - hamster.width;
+                else if (hamster.vx < 0) hamster.x = ob.x + ob.width;
+            }
+        });
+    }
 
     clams.forEach(clam => {
         let isOpen = Math.sin(animTime * 0.8) > 0;
@@ -625,7 +676,7 @@ function update2D() {
     enemies.forEach(enemy => {
         if (!enemy.alive) return;
         
-        // 敵のタイプ別AI・移動処理
+        // 🐦‍⬛ 2. カラスの真上垂直落下AI
         if (enemy.type === 'crow') {
             if (!enemy.state) { enemy.state = 'PATROL'; enemy.baseY = enemy.y; }
             if (enemy.state === 'PATROL') {
@@ -633,14 +684,20 @@ function update2D() {
                 enemy.y = enemy.baseY + Math.sin(animTime * 0.6) * 6;
                 if (enemy.x <= enemy.startX) enemy.dir = 1;
                 if (enemy.x >= enemy.endX) enemy.dir = -1;
-                if (Math.abs(hamster.x - enemy.x) < 180 && hamster.x < enemy.x && enemy.dir === -1) {
+
+                if (enemy.isFastDive && Math.abs(hamster.x - enemy.x) < 40 && hamster.y > enemy.y) {
+                    enemy.state = 'FAST_DIVE';
+                } else if (Math.abs(hamster.x - enemy.x) < 180 && hamster.x < enemy.x && enemy.dir === -1) {
                     enemy.state = 'DIVE';
                 }
+            } else if (enemy.state === 'FAST_DIVE') {
+                enemy.y += 8.0;
+                if (enemy.y >= 184) enemy.state = 'RETURN';
             } else if (enemy.state === 'DIVE') {
                 enemy.x -= enemy.speed * 1.8; enemy.y += 3.5;
                 if (enemy.y >= 184) enemy.state = 'RETURN';
             } else if (enemy.state === 'RETURN') {
-                enemy.x -= enemy.speed * 0.8; enemy.y -= 2.0;
+                enemy.x -= enemy.speed * 0.8; enemy.y -= 2.5;
                 if (enemy.y <= enemy.baseY) enemy.state = 'PATROL';
             }
         } else if (enemy.type === 'cat' || enemy.type === 'bug' || enemy.type === 'crab' || enemy.type === 'angler') {
@@ -729,14 +786,12 @@ function drawGolgoCricetusHead(offsetY) {
     ctx.restore();
 }
 
-// 🎨 2D敵グラフィック描画（野良猫 cat ＆ カラス crow 追加版）
 function drawEnemy(enemy) {
     if (!enemy.alive) return;
     ctx.save(); ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
     if (enemy.dir === -1) ctx.scale(-1, 1);
 
     if (enemy.type === 'cat') {
-        // 🐱 野良猫：橙色のトラ柄＆シャープな目としっぽ
         ctx.fillStyle = '#f97316'; ctx.fillRect(-14, -8, 28, 20);
         ctx.fillStyle = '#ea580c';
         ctx.beginPath();
@@ -747,7 +802,6 @@ function drawEnemy(enemy) {
         ctx.beginPath(); ctx.moveTo(-14, 4); ctx.lineTo(-20, -4); ctx.stroke();
 
     } else if (enemy.type === 'crow') {
-        // 🐦‍⬛ カラス：黒い体＆羽ばたきアニメ＆黄色クチバシ
         ctx.fillStyle = '#1e293b'; ctx.fillRect(-8, -6, 16, 14);
         const wingY = Math.sin(animTime * 1.5) > 0 ? -12 : 2;
         ctx.fillStyle = '#0f172a';
@@ -885,7 +939,6 @@ function drawCurrentZones() {
     });
 }
 
-// 🎨 1-3 宇宙ボスのグラフィック
 function drawBoss() {
     if (!boss || !boss.alive) return;
     ctx.save();
@@ -1089,6 +1142,20 @@ function draw2D() {
         }
     });
 
+    // 🚲 1. 街の障害物描画（ゴミ箱・チャリ）
+    if (currentStageId === 4) {
+        obstacles2D.forEach(ob => {
+            if (ob.type === 'trash') {
+                ctx.fillStyle = '#64748b'; ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
+                ctx.fillStyle = '#475569'; ctx.fillRect(ob.x - 2, ob.y, ob.width + 4, 4);
+            } else if (ob.type === 'bike') {
+                ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(ob.x + 8, ob.y + 28, 10, 0, Math.PI * 2); ctx.arc(ob.x + 28, ob.y + 28, 10, 0, Math.PI * 2); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(ob.x + 8, ob.y + 28); ctx.lineTo(ob.x + 20, ob.y + 15); ctx.lineTo(ob.x + 28, ob.y + 28); ctx.stroke();
+            }
+        });
+    }
+
     movingPlatforms.forEach(p => {
         let mGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
         mGrad.addColorStop(0, '#fbbf24'); mGrad.addColorStop(1, '#d97706');
@@ -1151,6 +1218,13 @@ function draw2D() {
     });
 
     enemies.forEach(enemy => drawEnemy(enemy));
+
+    // 🛹 3. 暴走スケボー描画
+    if (skateboardEnemy.active) {
+        ctx.fillStyle = '#3b82f6'; ctx.fillRect(skateboardEnemy.x, skateboardEnemy.y + 10, skateboardEnemy.width, 4);
+        ctx.fillStyle = '#1e293b'; ctx.beginPath(); ctx.arc(skateboardEnemy.x + 5, skateboardEnemy.y + 16, 3, 0, Math.PI * 2); ctx.arc(skateboardEnemy.x + 25, skateboardEnemy.y + 16, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
     drawBoss();
 
     if (currentStageId !== 3) {
@@ -1159,6 +1233,16 @@ function draw2D() {
     }
 
     drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
+
+    // 🛍️ 5. 風に舞うレジ袋描画（画面全体の手前に重ねる）
+    if (currentStageId === 4) {
+        trashBags2D.forEach(bag => {
+            bag.x += bag.speed; if (bag.x > STAGE_WIDTH) bag.x = 0;
+            let bagY = bag.y + Math.sin(animTime * 0.8 + bag.x) * 20;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.beginPath(); ctx.arc(bag.x, bagY, bag.radius, 0, Math.PI * 2); ctx.fill();
+        });
+    }
 
     ctx.restore();
 
