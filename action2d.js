@@ -1,0 +1,1140 @@
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const SCALE = 2;
+const BASE_WIDTH = 400;
+const BASE_HEIGHT = 240;
+
+let currentMode = '2D'; // '2D' または '3D'
+
+// 🔊 サウンドエンジン
+let audioCtx = null;
+let soundEnabled = false;
+let bgmTimer2D = null;
+let isBGMPlaying = false;
+
+function initAudio() {
+    if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) audioCtx = new AudioContextClass();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    soundEnabled = true;
+    if (currentMode === '2D' && !isBGMPlaying) startBGM2D();
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopBGM2D();
+        if (audioCtx && audioCtx.state === 'running') audioCtx.suspend();
+    } else {
+        if (soundEnabled) {
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            if (currentMode === '2D') startBGM2D();
+        }
+    }
+});
+
+function stopBGM2D() {
+    if (bgmTimer2D) clearInterval(bgmTimer2D);
+    isBGMPlaying = false;
+}
+
+// 🎮 2Dアクションゲームパラメータ
+let currentStageId = 1; 
+let STAGE_WIDTH = 3600;
+const STAGE_HEIGHT = 240;
+
+const camera = { x: 0, y: 0, width: BASE_WIDTH, height: BASE_HEIGHT };
+
+let gameState = 'PLAYING';
+let score = 0;
+let lives = 3;
+let itemsCollected = 0;
+let totalItems = 14;
+let animTime = 0;
+let popupText = '';
+let popupTimer = 0;
+
+let moveLeft = false, moveRight = false;
+let joystickVector = { x: 0, y: 0 };
+let joystickTouchId = null;
+
+let bullets = [];
+let bossBullets = [];
+let boss = null;
+let bgmPhase = 'NORMAL';
+
+// 🎯 暗躍演出用パラメータ
+let golgoEventTriggered = false;
+let golgoEventTimer = 0;
+let golgoHamsterY = 240; 
+
+const golgoImg = new Image();
+golgoImg.crossOrigin = "Anonymous";
+golgoImg.src = "https://raw.githubusercontent.com/motteli81/motteli81/refs/heads/main/kuroharahamu-warudakumi.png";
+let processedGolgoCanvas = null;
+
+golgoImg.onload = () => {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = golgoImg.width; tempCanvas.height = golgoImg.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(golgoImg, 0, 0);
+
+    const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i+1] > 140 && data[i] < 130 && data[i+2] < 110) data[i + 3] = 0;
+    }
+    tempCtx.putImageData(imgData, 0, 0);
+
+    const cropX = golgoImg.width * 0.65, cropY = golgoImg.height * 0.40;
+    const cropW = golgoImg.width * 0.35, cropH = golgoImg.height * 0.60;
+
+    const cutCanvas = document.createElement('canvas');
+    cutCanvas.width = cropW; cutCanvas.height = cropH;
+    cutCanvas.getContext('2d').drawImage(tempCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    processedGolgoCanvas = cutCanvas;
+};
+
+const stars = [];
+for (let i = 0; i < 60; i++) {
+    stars.push({ x: Math.random() * 4000, y: Math.random() * STAGE_HEIGHT, size: Math.random() * 3 + 1, alpha: Math.random() });
+}
+const bubbles = [];
+for (let i = 0; i < 30; i++) {
+    bubbles.push({ x: Math.random() * 3600, y: Math.random() * STAGE_HEIGHT, radius: 2 + Math.random() * 4, speed: 0.3 + Math.random() * 0.7 });
+}
+
+function playNoise(duration, type = 'snare') {
+    if (!soundEnabled || !audioCtx) return;
+    const bufferSize = audioCtx.sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = type === 'snare' ? 'highpass' : 'bandpass';
+    filter.frequency.value = type === 'snare' ? 1000 : 800;
+    const gain = audioCtx.createGain(); const now = audioCtx.currentTime;
+    gain.gain.setValueAtTime(type === 'snare' ? 0.15 : 0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+    noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+    noise.start(now);
+}
+
+function playArpeggio(freqs, duration) {
+    if (!soundEnabled || !audioCtx) return;
+    const now = audioCtx.currentTime; const step = duration / freqs.length;
+    freqs.forEach((f, i) => {
+        if (f <= 0) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+        osc.type = 'square'; osc.frequency.setValueAtTime(f, now + i * step);
+        gain.gain.setValueAtTime(0.08, now + i * step);
+        gain.gain.linearRampToValueAtTime(0.01, now + (i + 1) * step);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now + i * step); osc.stop(now + (i + 1) * step);
+    });
+}
+
+function playSound2D(type) {
+    if (!soundEnabled || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    if (type === 'jump' || type === 'swim') playArpeggio([261.63, 329.63, 392.00, 523.25, 659.25], 0.12);
+    else if (type === 'shot') {
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+        osc.type = 'square'; osc.frequency.setValueAtTime(1400, now); osc.frequency.exponentialRampToValueAtTime(300, now + 0.07);
+        gain.gain.setValueAtTime(0.12, now); gain.gain.linearRampToValueAtTime(0.001, now + 0.07);
+        osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.07);
+    } else if (type === 'hit' || type === 'stomp') playNoise(0.12, 'hat');
+    else if (type === 'item') playArpeggio([523.25, 659.25, 783.99, 1046.50], 0.15);
+    else if (type === 'powerup') playArpeggio([261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50, 1318.51], 0.35);
+    else if (type === 'damage') playNoise(0.25, 'hat');
+    else if (type === 'clear') playArpeggio([523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98], 0.6);
+    else if (type === 'encounter') { playNoise(0.35, 'snare'); playArpeggio([150, 120, 90, 60], 0.4); }
+}
+
+function startBGM2D() {
+    stopBGM2D(); isBGMPlaying = true;
+    const w1_melody  = [523.25, 659.25, 783.99, 659.25, 880.00, 783.99, 659.25, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 523.25, 493.88, 392.00];
+    const w1_harmony = [329.63, 392.00, 523.25, 392.00, 523.25, 523.25, 392.00, 329.63, 349.23, 392.00, 440.00, 392.00, 349.23, 329.63, 293.66, 246.94];
+    const w1_bass    = [130.81, 130.81, 196.00, 130.81, 174.61, 174.61, 130.81, 130.81, 146.83, 146.83, 174.61, 146.83, 196.00, 196.00, 130.81, 196.00];
+    const w1_drums   = ['k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 'k', 's', 'h'];
+    const w1_speed   = 130;
+
+    const sea_melody  = [523.25, 659.25, 783.99, 659.25, 783.99, 1046.50, 880.00, 698.46, 523.25, 783.99, 0, 0, 587.33, 698.46, 880.00, 698.46, 880.00, 1174.66, 987.77, 783.99, 587.33, 880.00, 0, 0];
+    const sea_harmony = [329.63, 392.00, 523.25, 392.00, 523.25, 659.25, 523.25, 440.00, 329.63, 523.25, 0, 0, 349.23, 440.00, 587.33, 440.00, 587.33, 783.99, 587.33, 493.88, 349.23, 587.33, 0, 0];
+    const sea_bass    = [130.81, 0, 0, 196.00, 0, 0, 174.61, 0, 0, 196.00, 0, 0, 146.83, 0, 0, 220.00, 0, 0, 196.00, 0, 0, 220.00, 0, 0];
+    const sea_drums   = ['h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h', 'h', '0', 'h'];
+    const sea_speed   = 140;
+
+    const w3_melody  = [659.25, 659.25, 783.99, 880.00, 1046.50, 987.77, 880.00, 783.99, 659.25, 587.33, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33];
+    const w3_harmony = [329.63, 329.63, 392.00, 440.00, 523.25, 493.88, 440.00, 392.00, 329.63, 293.66, 329.63, 392.00, 440.00, 392.00, 329.63, 293.66];
+    const w3_bass    = [164.81, 164.81, 329.63, 164.81, 220.00, 164.81, 261.63, 246.94, 164.81, 146.83, 164.81, 196.00, 220.00, 196.00, 164.81, 146.83];
+    const w3_drums   = ['k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 'k', 's', 's'];
+    const w3_speed   = 110;
+
+    const boss_melody  = [440.00, 466.16, 440.00, 349.23, 440.00, 523.25, 466.16, 440.00, 349.23, 392.00, 440.00, 466.16, 523.25, 587.33, 523.25, 466.16];
+    const boss_harmony = [220.00, 233.08, 220.00, 174.61, 220.00, 261.63, 233.08, 220.00, 174.61, 196.00, 220.00, 233.08, 261.63, 293.66, 261.63, 233.08];
+    const boss_bass    = [110.00, 110.00, 220.00, 110.00, 116.54, 116.54, 233.08, 116.54, 110.00, 110.00, 220.00, 110.00, 130.81, 130.81, 261.63, 130.81];
+    const boss_drums   = ['k', 's', 's', 'k', 'k', 's', 's', 'k', 'k', 's', 's', 'k', 'k', 'k', 's', 's'];
+    const boss_speed   = 95;
+
+    const golgo_melody  = [349.23, 0, 349.23, 392.00, 415.30, 0, 392.00, 0, 349.23, 0, 311.13, 349.23, 0, 0, 0, 0];
+    const golgo_harmony = [174.61, 0, 174.61, 196.00, 207.65, 0, 196.00, 0, 174.61, 0, 155.56, 174.61, 0, 0, 0, 0];
+    const golgo_bass    = [87.31, 87.31, 0, 87.31, 87.31, 0, 87.31, 0, 87.31, 87.31, 0, 87.31, 98.00, 103.83, 98.00, 87.31];
+    const golgo_drums   = ['k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 'k', 's', 'h'];
+    const golgo_speed   = 125;
+
+    let mel = w1_melody, harm = w1_harmony, bass = w1_bass, drums = w1_drums, speed = w1_speed;
+    if (currentStageId === 2) { mel = sea_melody; harm = sea_harmony; bass = sea_bass; drums = sea_drums; speed = sea_speed; }
+    else if (currentStageId === 3) {
+        if (bgmPhase === 'BOSS') { mel = boss_melody; harm = boss_harmony; bass = boss_bass; drums = boss_drums; speed = boss_speed; }
+        else { mel = w3_melody; harm = w3_harmony; bass = w3_bass; drums = w3_drums; speed = w3_speed; }
+    } else if (currentStageId === 4) { mel = golgo_melody; harm = golgo_harmony; bass = golgo_bass; drums = golgo_drums; speed = golgo_speed; }
+
+    let idx = 0;
+    bgmTimer2D = setInterval(() => {
+        if (!soundEnabled || !audioCtx || gameState !== 'PLAYING' || currentMode !== '2D') return;
+        const now = audioCtx.currentTime;
+        if (mel[idx] > 0) {
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.type = 'square'; osc.frequency.setValueAtTime(mel[idx], now); gain.gain.setValueAtTime(0.04, now);
+            gain.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.85);
+            osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + (speed / 1000) * 0.85);
+        }
+        if (harm[idx] > 0) {
+            const oscH = audioCtx.createOscillator(); const gainH = audioCtx.createGain();
+            oscH.type = 'square'; oscH.frequency.setValueAtTime(harm[idx], now); gainH.gain.setValueAtTime(0.025, now);
+            gainH.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.85);
+            oscH.connect(gainH); gainH.connect(audioCtx.destination); oscH.start(now); oscH.stop(now + (speed / 1000) * 0.85);
+        }
+        if (bass[idx] > 0) {
+            const oscB = audioCtx.createOscillator(); const gainB = audioCtx.createGain();
+            oscB.type = 'triangle'; oscB.frequency.setValueAtTime(bass[idx], now); gainB.gain.setValueAtTime(0.07, now);
+            gainB.gain.linearRampToValueAtTime(0.001, now + (speed / 1000) * 0.9);
+            oscB.connect(gainB); gainB.connect(audioCtx.destination); oscB.start(now); oscB.stop(now + (speed / 1000) * 0.9);
+        }
+        if (drums[idx] === 's') playNoise(0.06, 'snare');
+        else if (drums[idx] === 'h') playNoise(0.02, 'hat');
+        idx = (idx + 1) % mel.length;
+    }, speed);
+}
+
+document.getElementById('btnSound').addEventListener('click', () => {
+    if (!soundEnabled) { initAudio(); document.getElementById('btnSound').innerText = '🎵 サウンド ON 中'; }
+    else { soundEnabled = false; stopBGM2D(); document.getElementById('btnSound').innerText = '🔇 サウンド OFF 中'; }
+});
+
+const hamster = {
+    x: 30, y: 120, baseWidth: 30, baseHeight: 22, width: 30, height: 22, vx: 0, vy: 0,
+    baseSpeed: 3.2, speed: 3.2, baseJump: -9.5, jumpPower: -9.5, swimPower: -4.8, gravity: 0.45, drag: 1.0,
+    isGrounded: false, direction: 'right', invincibleTimer: 0, bigTimer: 0, speedTimer: 0, swimAnimTimer: 0
+};
+
+let platforms = [], movingPlatforms = [], spikes = [], springs = [], items = [], powerSeeds = [], speedBerries = [], recoveryHearts = [], enemies = [], clams = [], currentZones = [], goal = { x: 0, y: 0, width: 30, height: 40 };
+
+function loadStageData(stageId) {
+    currentStageId = stageId; itemsCollected = 0; bullets = []; bossBullets = []; boss = null; bgmPhase = 'NORMAL'; clams = []; currentZones = [];
+    golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
+
+    const btnJump = document.getElementById('btnJump'); const btnShot = document.getElementById('btnShot');
+    const dpadContainer = document.getElementById('dpadContainer'); const joystickArea = document.getElementById('joystickArea');
+
+    if (stageId === 3) {
+        btnJump.style.display = 'none'; btnShot.style.display = 'flex'; dpadContainer.style.display = 'none'; joystickArea.style.display = 'flex';
+    } else {
+        btnJump.style.display = 'flex'; btnShot.style.display = 'none'; dpadContainer.style.display = 'grid'; joystickArea.style.display = 'none';
+        btnJump.innerText = stageId === 2 ? 'SWIM' : 'JUMP';
+    }
+
+    for (let i = 1; i <= 4; i++) {
+        document.getElementById(`btnSelect${i}`).className = (stageId === i) ? 'select-btn active' : 'select-btn';
+    }
+
+    if (stageId === 1) { 
+        STAGE_WIDTH = 3600; hamster.gravity = 0.45; hamster.drag = 1.0; hamster.baseSpeed = 3.2; hamster.speed = 3.2;
+        platforms = [
+            { x: 0, y: 200, width: 300, height: 40 }, { x: 360, y: 170, width: 120, height: 20 },
+            { x: 540, y: 130, width: 100, height: 20 }, { x: 700, y: 190, width: 220, height: 50 },
+            { x: 1100, y: 180, width: 240, height: 60 }, { x: 1500, y: 140, width: 120, height: 20 },
+            { x: 1680, y: 90, width: 100, height: 20 }, { x: 1860, y: 190, width: 200, height: 50 },
+            { x: 2220, y: 170, width: 140, height: 20 }, { x: 2520, y: 190, width: 180, height: 50 },
+            { x: 2800, y: 150, width: 120, height: 20 }, { x: 3050, y: 200, width: 550, height: 40 }
+        ];
+        movingPlatforms = [
+            { x: 960, y: 160, width: 80, height: 16, minX: 940, maxX: 1080, minY: 160, maxY: 160, vx: 1.4, vy: 0 },
+            { x: 1380, y: 150, width: 75, height: 16, minX: 1380, maxX: 1380, minY: 90, maxY: 180, vx: 0, vy: 1.2 },
+            { x: 2100, y: 170, width: 80, height: 16, minX: 2080, maxX: 2200, minY: 170, maxY: 170, vx: 1.5, vy: 0 }
+        ];
+        spikes = [{ x: 800, y: 176, width: 40, height: 14 }, { x: 1200, y: 166, width: 50, height: 14 }, { x: 1940, y: 176, width: 40, height: 14 }];
+        springs = [{ x: 480, y: 156, width: 20, height: 14, bounce: -13.5 }, { x: 2300, y: 156, width: 20, height: 14, bounce: -14.0 }];
+        items = [
+            { x: 120, y: 170, width: 14, height: 18, collected: false }, { x: 400, y: 140, width: 14, height: 18, collected: false },
+            { x: 580, y: 100, width: 14, height: 18, collected: false }, { x: 850, y: 150, width: 14, height: 18, collected: false },
+            { x: 1000, y: 120, width: 14, height: 18, collected: false }, { x: 1180, y: 150, width: 14, height: 18, collected: false },
+            { x: 1540, y: 110, width: 14, height: 18, collected: false }, { x: 1720, y: 60, width: 14, height: 18, collected: false },
+            { x: 1980, y: 150, width: 14, height: 18, collected: false }, { x: 2270, y: 140, width: 14, height: 18, collected: false },
+            { x: 2570, y: 155, width: 14, height: 18, collected: false }, { x: 2850, y: 120, width: 14, height: 18, collected: false },
+            { x: 3120, y: 170, width: 14, height: 18, collected: false }, { x: 3350, y: 170, width: 14, height: 18, collected: false }
+        ];
+        totalItems = 14; powerSeeds = [{ x: 2580, y: 155, width: 20, height: 22, collected: false }];
+        speedBerries = [{ x: 420, y: 140, width: 18, height: 20, collected: false }, { x: 2120, y: 130, width: 18, height: 20, collected: false }];
+        recoveryHearts = [{ x: 1720, y: 35, width: 18, height: 18, collected: false }];
+        enemies = [
+            { type: 'bug', x: 150, y: 182, width: 22, height: 18, startX: 100, endX: 250, speed: 1.2, dir: 1, alive: true },
+            { type: 'bug', x: 740, y: 172, width: 22, height: 18, startX: 720, endX: 880, speed: 1.4, dir: 1, alive: true },
+            { type: 'bug', x: 1150, y: 162, width: 22, height: 18, startX: 1120, endX: 1300, speed: 1.6, dir: -1, alive: true },
+            { type: 'bug', x: 1900, y: 172, width: 22, height: 18, startX: 1880, endX: 2020, speed: 1.4, dir: 1, alive: true },
+            { type: 'bug', x: 3100, y: 182, width: 22, height: 18, startX: 3080, endX: 3250, speed: 1.6, dir: -1, alive: true }
+        ];
+        goal = { x: 3500, y: 160, width: 30, height: 40 };
+
+    } else if (stageId === 2) { 
+        STAGE_WIDTH = 3200; hamster.gravity = 0.15; hamster.drag = 0.96; hamster.baseSpeed = 2.8; hamster.speed = 2.8;
+        platforms = [
+            { x: 0, y: 210, width: 400, height: 30 }, { x: 480, y: 180, width: 140, height: 60 },
+            { x: 700, y: 140, width: 120, height: 20 }, { x: 900, y: 210, width: 350, height: 30 },
+            { x: 1350, y: 160, width: 150, height: 80 }, { x: 1600, y: 120, width: 100, height: 20 },
+            { x: 1800, y: 210, width: 300, height: 30 }, { x: 2200, y: 170, width: 140, height: 70 },
+            { x: 2450, y: 130, width: 110, height: 20 }, { x: 2650, y: 210, width: 550, height: 30 }
+        ];
+        movingPlatforms = []; spikes = []; springs = [];
+        // 元のアイテム配置を完全維持（11個）
+        items = [
+            { x: 150, y: 180, width: 14, height: 18, collected: false }, { x: 520, y: 140, width: 14, height: 18, collected: false },
+            { x: 740, y: 100, width: 14, height: 18, collected: false }, { x: 1050, y: 170, width: 14, height: 18, collected: false },
+            { x: 1200, y: 120, width: 14, height: 18, collected: false }, { x: 1400, y: 120, width: 14, height: 18, collected: false },
+            { x: 1640, y: 80, width: 14, height: 18, collected: false }, { x: 1880, y: 170, width: 14, height: 18, collected: false },
+            { x: 2250, y: 130, width: 14, height: 18, collected: false }, { x: 2750, y: 170, width: 14, height: 18, collected: false }, { x: 3000, y: 170, width: 14, height: 18, collected: false }
+        ];
+        totalItems = 12; // 1-2の元々のクリア目標数（12個）
+        powerSeeds = [{ x: 2260, y: 140, width: 20, height: 22, collected: false }]; speedBerries = [{ x: 540, y: 100, width: 18, height: 20, collected: false }]; recoveryHearts = [{ x: 1640, y: 50, width: 18, height: 18, collected: false }];
+        enemies = [
+            { type: 'crab', x: 200, y: 192, width: 22, height: 18, startX: 100, endX: 320, speed: 0.4, dir: 1, alive: true },
+            { type: 'crab', x: 1000, y: 192, width: 22, height: 18, startX: 950, endX: 1100, speed: 0.5, dir: -1, alive: true },
+            { type: 'jelly', x: 650, y: 100, width: 22, height: 24, startY: 50, endY: 150, speed: 0.35, dir: 1, alive: true },
+            { type: 'jelly', x: 1520, y: 80, width: 22, height: 24, startY: 40, endY: 130, speed: 0.45, dir: 1, alive: true },
+            { type: 'angler', x: 1950, y: 120, width: 28, height: 22, startX: 1850, endX: 2100, speed: 0.6, dir: -1, alive: true },
+            { type: 'angler', x: 2550, y: 80, width: 28, height: 22, startX: 2480, endX: 2700, speed: 0.7, dir: 1, alive: true }
+        ];
+        currentZones = [{ x: 900, y: 0, width: 350, height: 240, forceX: -1.6 }];
+        
+        // 🦪 シンプルに貝を上下に散らして4枚配置
+        clams = [
+            { x: 950, y: 40, width: 36, height: 30, hasSeed: true, seedCollected: false },   // 上層
+            { x: 1020, y: 110, width: 36, height: 30, hasSeed: true, seedCollected: false }, // 中層
+            { x: 1120, y: 170, width: 36, height: 30, hasSeed: true, seedCollected: false }, // 下層
+            { x: 1180, y: 50, width: 36, height: 30, hasSeed: true, seedCollected: false }   // 上層
+        ];
+        goal = { x: 3100, y: 170, width: 30, height: 40 };
+
+    } else if (stageId === 3) { 
+        STAGE_WIDTH = 3800; hamster.gravity = 0; hamster.drag = 1.0; hamster.baseSpeed = 3.5; hamster.speed = 3.5;
+        platforms = [
+            { x: 500, y: 0, width: 110, height: 60 }, { x: 500, y: 180, width: 110, height: 60 },
+            { x: 1200, y: 0, width: 140, height: 70 }, { x: 1200, y: 170, width: 140, height: 70 },
+            { x: 1900, y: 50, width: 100, height: 140 }, { x: 2500, y: 0, width: 120, height: 80 }, { x: 2500, y: 160, width: 120, height: 80 }
+        ];
+        movingPlatforms = [
+            { x: 800, y: 0, width: 24, height: 100, minX: 800, maxX: 800, minY: 0, maxY: 80, vx: 0, vy: 1.5 },
+            { x: 1600, y: 140, width: 24, height: 100, minX: 1600, maxX: 1600, minY: 60, maxY: 140, vx: 0, vy: -1.5 },
+            { x: 2200, y: 0, width: 24, height: 100, minX: 2200, maxX: 2200, minY: 0, maxY: 80, vx: 0, vy: 1.8 }
+        ];
+        spikes = []; springs = [];
+        items = [
+            { x: 300, y: 100, width: 14, height: 18, collected: false }, { x: 750, y: 120, width: 14, height: 18, collected: false },
+            { x: 1050, y: 60, width: 14, height: 18, collected: false }, { x: 1500, y: 130, width: 14, height: 18, collected: false },
+            { x: 2100, y: 80, width: 14, height: 18, collected: false }, { x: 2700, y: 120, width: 14, height: 18, collected: false }
+        ];
+        totalItems = 6; powerSeeds = [{ x: 1600, y: 110, width: 20, height: 22, collected: false }]; speedBerries = []; recoveryHearts = [];
+        enemies = [
+            { type: 'bee', x: 600, y: 120, width: 22, height: 18, startY: 40, endY: 180, speed: 1.5, dir: 1, alive: true },
+            { type: 'fly', x: 950, y: 80, width: 20, height: 16, speed: 2.8, dir: -1, alive: true },
+            { type: 'saw', x: 1250, y: 120, width: 24, height: 24, alive: true },
+            { type: 'bee', x: 1700, y: 140, width: 22, height: 18, startY: 30, endY: 190, speed: 1.6, dir: 1, alive: true },
+            { type: 'fly', x: 2100, y: 150, width: 20, height: 16, speed: 3.0, dir: -1, alive: true },
+            { type: 'saw', x: 2550, y: 120, width: 24, height: 24, alive: true }
+        ];
+        boss = { x: 3300, y: 90, width: 60, height: 50, hp: 20, maxHp: 20, startY: 30, endY: 160, speed: 2.2, dir: 1, shootTimer: 0, alive: true };
+        goal = { x: 3650, y: 100, width: 30, height: 40 };
+
+    } else if (stageId === 4) { 
+        STAGE_WIDTH = 3200; hamster.gravity = 0.45; hamster.drag = 1.0; hamster.baseSpeed = 3.2; hamster.speed = 3.2;
+        platforms = [
+            { x: 0, y: 190, width: 450, height: 50 }, { x: 520, y: 160, width: 160, height: 80 },
+            { x: 750, y: 130, width: 180, height: 110 }, { x: 1000, y: 190, width: 400, height: 50 },
+            { x: 1480, y: 160, width: 150, height: 80 }, { x: 1700, y: 120, width: 200, height: 120 },
+            { x: 2000, y: 190, width: 400, height: 50 }, { x: 2480, y: 150, width: 160, height: 90 }, { x: 2700, y: 190, width: 500, height: 50 }
+        ];
+        movingPlatforms = [
+            { x: 450, y: 170, width: 60, height: 14, minX: 450, maxX: 510, minY: 170, maxY: 170, vx: 1.0, vy: 0 },
+            { x: 930, y: 150, width: 60, height: 14, minX: 930, maxX: 930, minY: 110, maxY: 180, vx: 0, vy: 1.2 }
+        ];
+        spikes = [{ x: 1120, y: 176, width: 40, height: 14 }, { x: 2150, y: 176, width: 60, height: 14 }];
+        springs = [{ x: 680, y: 146, width: 20, height: 14, bounce: -12.5 }];
+        items = [
+            { x: 120, y: 160, width: 14, height: 18, collected: false }, { x: 300, y: 160, width: 14, height: 18, collected: false },
+            { x: 560, y: 130, width: 14, height: 18, collected: false }, { x: 800, y: 100, width: 14, height: 18, collected: false },
+            { x: 1080, y: 160, width: 14, height: 18, collected: false }, { x: 1280, y: 160, width: 14, height: 18, collected: false },
+            { x: 1530, y: 130, width: 14, height: 18, collected: false }, { x: 1780, y: 90, width: 14, height: 18, collected: false },
+            { x: 2080, y: 160, width: 14, height: 18, collected: false }, { x: 2280, y: 160, width: 14, height: 18, collected: false }
+        ];
+        totalItems = 10; powerSeeds = [{ x: 1790, y: 65, width: 20, height: 22, collected: false }];
+        speedBerries = [{ x: 320, y: 155, width: 18, height: 20, collected: false }]; recoveryHearts = [{ x: 1530, y: 100, width: 18, height: 18, collected: false }];
+        enemies = [
+            { type: 'bug', x: 220, y: 172, width: 22, height: 18, startX: 180, endX: 350, speed: 1.3, dir: 1, alive: true },
+            { type: 'bug', x: 1050, y: 172, width: 22, height: 18, startX: 1020, endX: 1200, speed: 1.5, dir: 1, alive: true },
+            { type: 'bug', x: 1750, y: 102, width: 22, height: 18, startX: 1720, endX: 1880, speed: 1.6, dir: -1, alive: true },
+            { type: 'bug', x: 2750, y: 172, width: 22, height: 18, startX: 2720, endX: 2950, speed: 1.8, dir: 1, alive: true }
+        ];
+        goal = { x: 3100, y: 150, width: 30, height: 40 };
+    }
+    if (soundEnabled && isBGMPlaying) startBGM2D();
+}
+
+function switchStage(stageId) { loadStageData(stageId); resetGame(); }
+
+const btnLeft = document.getElementById('btnLeft'); const btnRight = document.getElementById('btnRight');
+const btnShot = document.getElementById('btnShot'); const btnJump = document.getElementById('btnJump');
+
+const bindBtn = (btn, startFn, stopFn) => {
+    btn.addEventListener('touchstart', (e) => { if(e.cancelable) e.preventDefault(); e.stopPropagation(); initAudio(); startFn(); }, {passive:false});
+    btn.addEventListener('touchend', (e) => { if(e.cancelable) e.preventDefault(); e.stopPropagation(); stopFn(); }, {passive:false});
+    btn.addEventListener('touchcancel', (e) => { if(e.cancelable) e.preventDefault(); e.stopPropagation(); stopFn(); }, {passive:false});
+    btn.addEventListener('mousedown', (e) => { e.stopPropagation(); initAudio(); startFn(); });
+    btn.addEventListener('mouseup', (e) => { e.stopPropagation(); stopFn(); });
+    btn.addEventListener('mouseleave', (e) => { e.stopPropagation(); stopFn(); });
+};
+
+bindBtn(btnLeft, () => moveLeft = true, () => moveLeft = false);
+bindBtn(btnRight, () => moveRight = true, () => moveRight = false);
+
+const joystickArea = document.getElementById('joystickArea');
+const joystickStick = document.getElementById('joystickStick');
+
+const updateJoystick = (clientX, clientY) => {
+    const rect = joystickArea.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2; const centerY = rect.top + rect.height / 2;
+    let dx = clientX - centerX; let dy = clientY - centerY;
+    const maxRadius = rect.width / 2 - 25; const dist = Math.hypot(dx, dy);
+    if (dist > maxRadius) { dx = (dx / dist) * maxRadius; dy = (dy / dist) * maxRadius; }
+    joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
+    joystickVector.x = dx / maxRadius; joystickVector.y = dy / maxRadius;
+};
+
+const resetJoystick = () => { joystickStick.style.transform = `translate(0px, 0px)`; joystickVector = { x: 0, y: 0 }; joystickTouchId = null; };
+
+joystickArea.addEventListener('touchstart', (e) => {
+    if(e.cancelable) e.preventDefault(); e.stopPropagation(); initAudio();
+    if (joystickTouchId === null) { const touch = e.changedTouches[0]; joystickTouchId = touch.identifier; updateJoystick(touch.clientX, touch.clientY); }
+}, {passive:false});
+joystickArea.addEventListener('touchmove', (e) => {
+    if(e.cancelable) e.preventDefault(); e.stopPropagation();
+    if (joystickTouchId !== null) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joystickTouchId) { updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY); break; }
+        }
+    }
+}, {passive:false});
+const handleJoystickEnd = (e) => {
+    if (joystickTouchId !== null) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joystickTouchId) { resetJoystick(); break; }
+        }
+    }
+};
+joystickArea.addEventListener('touchend', handleJoystickEnd); joystickArea.addEventListener('touchcancel', handleJoystickEnd);
+
+window.addEventListener('keydown', (e) => {
+    if (currentStageId === 3 && currentMode === '2D') {
+        if (e.key === 'ArrowLeft') joystickVector.x = -1; if (e.key === 'ArrowRight') joystickVector.x = 1;
+        if (e.key === 'ArrowUp') joystickVector.y = -1; if (e.key === 'ArrowDown') joystickVector.y = 1;
+        if (e.key === 'z' || e.key === 'Z') shootBullet();
+    }
+});
+window.addEventListener('keyup', (e) => {
+    if (currentStageId === 3 && currentMode === '2D') {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') joystickVector.x = 0;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') joystickVector.y = 0;
+    }
+});
+
+const shootBullet = () => {
+    if (currentStageId === 3 && gameState === 'PLAYING') {
+        bullets.push({ x: hamster.x + hamster.width, y: hamster.y + hamster.height / 2 - 3, width: 10, height: 6, speed: 8.0 });
+        playSound2D('shot');
+    }
+};
+btnShot.addEventListener('touchstart', (e) => { if(e.cancelable) e.preventDefault(); e.stopPropagation(); initAudio(); shootBullet(); }, {passive:false});
+btnShot.addEventListener('mousedown', (e) => { e.stopPropagation(); initAudio(); shootBullet(); });
+
+const doJump = (e) => {
+    if(e.cancelable) e.preventDefault(); e.stopPropagation(); initAudio();
+    if (gameState === 'CLEAR') { if (currentStageId < 4) switchStage(currentStageId + 1); else resetGame(); return; }
+    else if (gameState === 'GAMEOVER') { resetGame(); return; }
+
+    if (currentStageId === 1 && hamster.isGrounded) { hamster.vy = hamster.jumpPower; hamster.isGrounded = false; playSound2D('jump'); }
+    else if (currentStageId === 2) { hamster.vy = hamster.swimPower; hamster.swimAnimTimer = 15; playSound2D('swim'); }
+    else if (currentStageId === 4 && hamster.isGrounded) { hamster.vy = hamster.jumpPower; hamster.isGrounded = false; playSound2D('jump'); }
+};
+btnJump.addEventListener('touchstart', doJump, {passive:false});
+btnJump.addEventListener('mousedown', doJump);
+
+function resetGame() {
+    lives = 3; hamster.x = 30; hamster.y = 120; hamster.vx = 0; hamster.vy = 0;
+    hamster.invincibleTimer = 0; hamster.bigTimer = 0; hamster.speedTimer = 0;
+    hamster.width = hamster.baseWidth; hamster.height = hamster.baseHeight; hamster.speed = hamster.baseSpeed;
+    moveLeft = false; moveRight = false; resetJoystick();
+    bullets = []; bossBullets = []; bgmPhase = 'NORMAL'; camera.x = 0; itemsCollected = 0;
+    items.forEach(i => i.collected = false); powerSeeds.forEach(p => p.collected = false);
+    speedBerries.forEach(s => s.collected = false); recoveryHearts.forEach(h => h.collected = false);
+    enemies.forEach(e => { e.alive = true; if(e.startX) e.x = e.startX; if(e.startY) e.y = e.startY; });
+    clams.forEach(c => c.seedCollected = false);
+    if (boss) { boss.alive = true; boss.hp = boss.maxHp; boss.y = boss.startY; }
+    golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
+    gameState = 'PLAYING';
+    if (soundEnabled && isBGMPlaying) startBGM2D();
+}
+
+function start3DMode() {
+    currentMode = '3D';
+    stopBGM2D();
+    if (typeof restartGame3D === 'function') restartGame3D();
+    document.getElementById('controls-2d').style.display = 'none';
+    document.getElementById('controls-3d').style.display = 'grid';
+    document.getElementById('touch-hint-3d').style.display = 'block';
+    document.getElementById('stageSelectBar').style.display = 'none';
+    document.getElementById('titleText').innerText = '  ';
+}
+
+function end3DMode() {
+    currentMode = '2D';
+    golgoEventTimer = -1;
+    if (typeof stopBGM3D === 'function') stopBGM3D();
+    document.getElementById('controls-2d').style.display = 'flex';
+    document.getElementById('controls-3d').style.display = 'none';
+    document.getElementById('touch-hint-3d').style.display = 'none';
+    document.getElementById('stageSelectBar').style.display = 'flex';
+    document.getElementById('titleText').innerText = '🐹 ハムの大冒険';
+    if (soundEnabled) startBGM2D();
+}
+
+function update2D() {
+    if (gameState !== 'PLAYING') return;
+
+    if (currentStageId === 4) {
+        if (!golgoEventTriggered && hamster.x > 3000) {
+            golgoEventTriggered = true; golgoEventTimer = 1; playSound2D('encounter');
+        }
+        if (golgoEventTimer > 0) {
+            golgoEventTimer++;
+            if (golgoEventTimer > 10 && golgoHamsterY > 0) golgoHamsterY -= 8;
+            if (golgoEventTimer > 130) start3DMode();
+            return;
+        }
+    }
+
+    let isMoving = false;
+    if (currentStageId === 3) {
+        hamster.vx = joystickVector.x * hamster.speed; hamster.vy = joystickVector.y * hamster.speed;
+        if (Math.abs(joystickVector.x) > 0.1 || Math.abs(joystickVector.y) > 0.1) isMoving = true;
+        if (!boss || camera.x < boss.x - 300) camera.x += 1.3;
+        if (hamster.x < camera.x) hamster.x = camera.x;
+
+        let nextPhase = bgmPhase;
+        if (camera.x >= 2800 && camera.x < 3000) {
+            nextPhase = 'WARNING'; if (popupTimer === 0 && bgmPhase !== 'WARNING') { popupText = '⚠️ WARNING !! BOSS APPROACHING'; popupTimer = 90; }
+        } else if (camera.x >= 3000) nextPhase = 'BOSS';
+        if (nextPhase !== bgmPhase) { bgmPhase = nextPhase; if (soundEnabled) startBGM2D(); }
+    } else {
+        if (moveLeft) { hamster.vx = -hamster.speed; hamster.direction = 'left'; isMoving = true; }
+        else if (moveRight) { hamster.vx = hamster.speed; hamster.direction = 'right'; isMoving = true; }
+        else { hamster.vx = currentStageId === 2 ? hamster.vx * hamster.drag : 0; }
+        currentZones.forEach(zone => { if (isColliding(hamster, zone)) hamster.vx += zone.forceX; });
+        hamster.vy += hamster.gravity;
+        if (currentStageId === 2) hamster.vy *= hamster.drag;
+        camera.x = hamster.x - BASE_WIDTH / 2 + hamster.width / 2;
+    }
+
+    animTime += 0.25; hamster.x += hamster.vx; hamster.y += hamster.vy;
+    if (hamster.x < 0) hamster.x = 0; if (hamster.y < 10) { hamster.y = 10; hamster.vy = 0; }
+    if (hamster.invincibleTimer > 0) hamster.invincibleTimer--;
+    if (hamster.bigTimer > 0) { hamster.bigTimer--; hamster.width = hamster.baseWidth * 1.8; hamster.height = hamster.baseHeight * 1.8; if (hamster.bigTimer === 0) { hamster.width = hamster.baseWidth; hamster.height = hamster.baseHeight; } }
+    if (popupTimer > 0) popupTimer--;
+    if (camera.x < 0) camera.x = 0; if (camera.x > STAGE_WIDTH - BASE_WIDTH) camera.x = STAGE_WIDTH - BASE_WIDTH;
+
+    movingPlatforms.forEach(p => { p.x += p.vx; p.y += p.vy; if (p.x <= p.minX || p.x >= p.maxX) p.vx *= -1; if (p.y <= p.minY || p.y >= p.maxY) p.vy *= -1; });
+    spikes.forEach(spike => { if (isColliding(hamster, spike) && hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; hamster.vy = -5; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; } });
+
+    clams.forEach(clam => {
+        let isOpen = Math.sin(animTime * 0.8) > 0;
+        if (isColliding(hamster, clam)) {
+            if (isOpen) { if (clam.hasSeed && !clam.seedCollected) { clam.seedCollected = true; score += 150; itemsCollected++; playSound2D('item'); } }
+            else if (hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; hamster.vy = -4; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; }
+        }
+    });
+
+    springs.forEach(spring => { if (isColliding(hamster, spring) && hamster.vy >= 0) { hamster.vy = spring.bounce; playSound2D('jump'); } });
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i]; b.x += b.speed;
+        if (b.x > camera.x + BASE_WIDTH) { bullets.splice(i, 1); continue; }
+        enemies.forEach(e => { if (e.alive && isColliding(b, e)) { e.alive = false; score += 200; playSound2D('hit'); bullets.splice(i, 1); } });
+        if (boss && boss.alive && isColliding(b, boss)) { boss.hp--; score += 100; playSound2D('hit'); bullets.splice(i, 1); if (boss.hp <= 0) { boss.alive = false; score += 10000; playSound2D('clear'); gameState = 'CLEAR'; } }
+    }
+
+    if (boss && boss.alive && hamster.x > boss.x - 380) {
+        boss.y += boss.speed * boss.dir;
+        if (boss.y <= boss.startY) { boss.y = boss.startY; boss.dir = 1; } else if (boss.y >= boss.endY) { boss.y = boss.endY; boss.dir = -1; }
+        boss.shootTimer++;
+        if (boss.shootTimer > 50) { boss.shootTimer = 0; bossBullets.push({ x: boss.x, y: boss.y + boss.height / 2, width: 12, height: 6, vx: -4.5, vy: (hamster.y - boss.y) * 0.02 }); }
+        if (isColliding(hamster, boss) && hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; }
+    }
+
+    for (let i = bossBullets.length - 1; i >= 0; i--) {
+        let bb = bossBullets[i]; bb.x += bb.vx; bb.y += bb.vy;
+        if (isColliding(hamster, bb) && hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; playSound2D('damage'); bossBullets.splice(i, 1); if (lives <= 0) gameState = 'GAMEOVER'; }
+        else if (bb.x < camera.x - 20) bossBullets.splice(i, 1);
+    }
+
+    const allPlatforms = [...platforms, ...movingPlatforms];
+    allPlatforms.forEach(p => {
+        if (isColliding(hamster, p)) {
+            if (currentStageId === 3) {
+                let overlapLeft = (hamster.x + hamster.width) - p.x, overlapRight = (p.x + p.width) - hamster.x;
+                let overlapTop = (hamster.y + hamster.height) - p.y, overlapBottom = (p.y + p.height) - hamster.y;
+                let minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+                if (minOverlap === overlapLeft) hamster.x = p.x - hamster.width;
+                else if (minOverlap === overlapRight) hamster.x = p.x + p.width;
+                else if (minOverlap === overlapTop) hamster.y = p.y - hamster.height;
+                else if (minOverlap === overlapBottom) hamster.y = p.y + p.height;
+            } else if (hamster.y + hamster.height >= p.y && hamster.y + hamster.height <= p.y + p.height + hamster.vy) {
+                if (hamster.vy >= 0) { hamster.isGrounded = true; hamster.vy = 0; hamster.y = p.y - hamster.height; }
+            }
+        }
+    });
+
+    enemies.forEach(enemy => {
+        if (!enemy.alive) return;
+        if (enemy.type === 'bug' || enemy.type === 'crab' || enemy.type === 'angler') {
+            enemy.x += enemy.speed * enemy.dir; if (enemy.x <= enemy.startX) { enemy.x = enemy.startX; enemy.dir = 1; } else if (enemy.x >= enemy.endX) { enemy.x = enemy.endX; enemy.dir = -1; }
+        } else if (enemy.type === 'jelly' || enemy.type === 'bee') {
+            enemy.y += enemy.speed * enemy.dir; if (enemy.y <= enemy.startY) { enemy.y = enemy.startY; enemy.dir = 1; } else if (enemy.y >= enemy.endY) { enemy.y = enemy.endY; enemy.dir = -1; }
+        } else if (enemy.type === 'fly') enemy.x += enemy.speed * enemy.dir;
+
+        if (isColliding(hamster, enemy)) {
+            if (hamster.bigTimer > 0) { enemy.alive = false; score += 300; playSound2D('stomp'); }
+            else if (currentStageId !== 3 && hamster.vy > 0 && hamster.y + hamster.height - hamster.vy <= enemy.y + 10) { enemy.alive = false; score += 200; hamster.vy = -5; playSound2D('stomp'); }
+            else if (hamster.invincibleTimer === 0) { lives--; hamster.invincibleTimer = 60; hamster.vy = -3; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; }
+        }
+    });
+
+    items.forEach(item => {
+        if (!item.collected && isColliding(hamster, item)) {
+            item.collected = true; score += 100; itemsCollected++; playSound2D('item');
+            if (itemsCollected === totalItems) { lives++; popupText = 'FULL SEEDS! LIFE UP! ❤️'; popupTimer = 120; playSound2D('powerup'); }
+        }
+    });
+
+    powerSeeds.forEach(seed => {
+        if (!seed.collected && isColliding(hamster, seed)) {
+            seed.collected = true; score += 500; hamster.bigTimer = 480; popupText = 'BIG HAMSTER! 🌻'; popupTimer = 90; playSound2D('powerup');
+        }
+    });
+
+    if (currentStageId !== 3 && hamster.y > STAGE_HEIGHT + 30) {
+        lives--; playSound2D('damage'); if (lives <= 0) gameState = 'GAMEOVER'; else { hamster.x = Math.max(30, camera.x + 20); hamster.y = 80; hamster.vy = 0; hamster.invincibleTimer = 60; }
+    }
+    if (currentStageId !== 3 && isColliding(hamster, goal)) { gameState = 'CLEAR'; playSound2D('clear'); }
+}
+
+function isColliding(a, b) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
+
+function drawHamster(x, y, width, height, direction) {
+    if (hamster.invincibleTimer % 6 >= 3) return;
+    ctx.save(); ctx.translate(x + width / 2, y + height / 2);
+    let scaleFactor = width / hamster.baseWidth; ctx.scale(scaleFactor, scaleFactor);
+    if (direction === 'left') ctx.scale(-1, 1);
+    let isMoving = Math.abs(hamster.vx) > 0.1 || Math.abs(hamster.vy) > 0.1;
+    let legStep = isMoving ? Math.sin(animTime * 8) * 3 : 0;
+    let bodyBob = isMoving ? Math.abs(Math.sin(animTime * 8)) * 1.5 : 0;
+
+    if (currentStageId === 3) {
+        let wingFlap = Math.sin(animTime * 12) * 0.3; ctx.save(); ctx.translate(-10, -5); ctx.rotate(-0.2 + wingFlap);
+        let wingGrad = ctx.createLinearGradient(-12, -8, 8, 4); wingGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); wingGrad.addColorStop(1, 'rgba(56, 189, 248, 0.4)');
+        ctx.fillStyle = wingGrad; ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-4, -4, 12, 6, -Math.PI / 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+
+    ctx.fillStyle = '#fbcfe8'; ctx.beginPath(); ctx.arc(-14, 2 - bodyBob, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fbcfe8'; ctx.beginPath(); ctx.arc(-8 - legStep, 10, 2.8, 0, Math.PI * 2); ctx.arc(6 + legStep, 10, 2.8, 0, Math.PI * 2); ctx.fill();
+
+    let backGrad = ctx.createRadialGradient(-6, 0, 2, -4, 0, 13); backGrad.addColorStop(0, '#fef08a'); backGrad.addColorStop(0.6, '#f59e0b'); backGrad.addColorStop(1, '#b45309');
+    ctx.fillStyle = backGrad; ctx.beginPath(); ctx.ellipse(-4, 1 - bodyBob, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+    let headGrad = ctx.createRadialGradient(6, -2, 1, 5, -1, 10); headGrad.addColorStop(0, '#fef08a'); headGrad.addColorStop(0.6, '#f59e0b'); headGrad.addColorStop(1, '#b45309');
+    ctx.fillStyle = headGrad; ctx.beginPath(); ctx.ellipse(5, -2 - bodyBob, 9, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+    let bellyGrad = ctx.createRadialGradient(4, 3, 1, 3, 2, 9); bellyGrad.addColorStop(0, '#ffffff'); bellyGrad.addColorStop(1, '#fef08a');
+    ctx.fillStyle = bellyGrad; ctx.beginPath(); ctx.ellipse(-1, 3 - bodyBob, 9, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(8, 1 - bodyBob, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#f59e0b'; ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-2, -9 - bodyBob, 3, 4.5, -0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(5, -9 - bodyBob, 3, 4.5, 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f472b6'; ctx.beginPath(); ctx.ellipse(-2, -9 - bodyBob, 1.8, 3, -0.2, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(5, -9 - bodyBob, 1.8, 3, 0.2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(8, -3 - bodyBob, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(9, -4 - bodyBob, 1.0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(244, 114, 182, 0.65)'; ctx.beginPath(); ctx.arc(11, 1 - bodyBob, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f472b6'; ctx.beginPath(); ctx.arc(13.5, -1 - bodyBob, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawGolgoCricetusHead(offsetY) {
+    ctx.save();
+    if (processedGolgoCanvas) {
+        const targetW = 220; const targetH = targetW * (processedGolgoCanvas.height / processedGolgoCanvas.width);
+        const posX = BASE_WIDTH - targetW + 10; const posY = BASE_HEIGHT - targetH + 10 + offsetY;
+        ctx.drawImage(processedGolgoCanvas, posX, posY, targetW, targetH);
+    }
+    ctx.restore();
+}
+
+// 🎨 2D敵のオリジナルグラフィック完全復元
+function drawEnemy(enemy) {
+    if (!enemy.alive) return;
+    ctx.save(); ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+    if (enemy.dir === -1) ctx.scale(-1, 1);
+
+    if (enemy.type === 'bug') {
+        let wiggle = Math.sin(animTime * 4) * 2;
+        let bugGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 11);
+        bugGrad.addColorStop(0, '#86efac'); bugGrad.addColorStop(0.6, '#22c55e'); bugGrad.addColorStop(1, '#14532d');
+        ctx.fillStyle = bugGrad;
+        ctx.beginPath(); ctx.arc(-6, wiggle, 7, 0, Math.PI * 2); 
+        ctx.arc(0, -wiggle, 7.5, 0, Math.PI * 2); 
+        ctx.arc(6, -1, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(9, -3, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(10, -3.8, 0.8, 0, Math.PI * 2); ctx.fill();
+
+    } else if (enemy.type === 'crab') {
+        let claw = Math.sin(animTime * 1.8) * 2.5;
+        let leg = Math.sin(animTime * 2.2) * 1.8;
+        let crabGrad = ctx.createRadialGradient(-2, -3, 2, 0, 0, 11);
+        crabGrad.addColorStop(0, '#fca5a5'); crabGrad.addColorStop(0.6, '#ef4444'); crabGrad.addColorStop(1, '#7f1d1d');
+        ctx.fillStyle = crabGrad;
+        ctx.beginPath(); ctx.ellipse(0, 2, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(-4, -6, 2.5, 0, Math.PI * 2); ctx.arc(4, -6, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath(); ctx.arc(-4, -6, 1.2, 0, Math.PI * 2); ctx.arc(4, -6, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-6, 6); ctx.lineTo(-11, 11 + leg);
+        ctx.moveTo(-3, 6); ctx.lineTo(-7, 12 - leg);
+        ctx.moveTo(6, 6); ctx.lineTo(11, 11 - leg);
+        ctx.moveTo(3, 6); ctx.lineTo(7, 12 + leg);
+        ctx.stroke();
+        ctx.fillStyle = '#ef4444'; 
+        ctx.beginPath(); 
+        ctx.arc(-9 - claw, -3, 4.5, 0, Math.PI * 2); 
+        ctx.arc(9 + claw, -3, 4.5, 0, Math.PI * 2); 
+        ctx.fill();
+
+    } else if (enemy.type === 'jelly') {
+        let pulse = Math.sin(animTime * 1.5);
+        let scaleY = 1 + pulse * 0.22;
+        let scaleX = 1 - pulse * 0.15;
+        ctx.scale(scaleX, scaleY);
+        let jellyGrad = ctx.createRadialGradient(0, -6, 2, 0, -2, 12);
+        jellyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+        jellyGrad.addColorStop(0.5, 'rgba(244, 114, 182, 0.85)');
+        jellyGrad.addColorStop(1, 'rgba(192, 38, 211, 0.7)');
+        ctx.fillStyle = jellyGrad;
+        ctx.beginPath(); ctx.arc(0, -3, 11, Math.PI, 0); ctx.fill();
+        ctx.beginPath(); ctx.arc(0, -3, 11, 0, Math.PI); ctx.fill();
+        ctx.strokeStyle = 'rgba(244, 114, 182, 0.9)'; ctx.lineWidth = 1.8;
+        for (let i = -7; i <= 7; i += 3.5) {
+            let wave = Math.sin(animTime * 2.2 + i * 0.8) * 4;
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.quadraticCurveTo(i + wave, 7, i - wave * 0.5, 14);
+            ctx.stroke();
+        }
+
+    } else if (enemy.type === 'angler') {
+        let bodyGrad = ctx.createRadialGradient(2, -2, 2, 0, 0, 14);
+        bodyGrad.addColorStop(0, '#475569'); bodyGrad.addColorStop(0.6, '#1e293b'); bodyGrad.addColorStop(1, '#0f172a');
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath(); ctx.ellipse(0, 2, 13, 10, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.moveTo(8, 0); ctx.lineTo(13, 2); ctx.lineTo(9, 4);
+        ctx.lineTo(13, 6); ctx.lineTo(8, 7); ctx.fill();
+        ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(6, -3, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(7, -3, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, -7);
+        ctx.quadraticCurveTo(8, -18, 14, -12);
+        ctx.stroke();
+        ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 10;
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(14, -12, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+    } else if (enemy.type === 'bee') {
+        let wing = Math.sin(animTime * 12) * 5;
+        let beeGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 10);
+        beeGrad.addColorStop(0, '#fef08a'); beeGrad.addColorStop(0.7, '#f59e0b'); beeGrad.addColorStop(1, '#b45309');
+        ctx.fillStyle = beeGrad; ctx.beginPath(); ctx.ellipse(0, 0, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a'; ctx.fillRect(-2, -7, 3, 14); ctx.fillRect(3, -6, 2, 12);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; ctx.beginPath(); ctx.ellipse(-2, -8 + wing, 5, 7, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+
+    } else if (enemy.type === 'fly') {
+        let wing = Math.sin(animTime * 15) * 4;
+        ctx.fillStyle = '#475569'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; ctx.beginPath(); ctx.arc(0, -6 + wing, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(4, -2, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    } else if (enemy.type === 'saw') {
+        ctx.rotate(animTime * 6);
+        let sawGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 14);
+        sawGrad.addColorStop(0, '#f8fafc'); sawGrad.addColorStop(0.5, '#94a3b8'); sawGrad.addColorStop(1, '#334155');
+        ctx.fillStyle = sawGrad; ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawClams() {
+    clams.forEach(clam => {
+        ctx.save(); ctx.translate(clam.x + clam.width / 2, clam.y + clam.height / 2);
+        let isOpen = Math.sin(animTime * 0.8) > 0; ctx.fillStyle = '#e2e8f0'; ctx.beginPath(); ctx.ellipse(0, 6, 17, 8, 0, 0, Math.PI * 2); ctx.fill();
+        if (isOpen) {
+            if (clam.hasSeed && !clam.seedCollected) { ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.ellipse(0, 0, 5, 8, Math.PI / 8, 0, Math.PI * 2); ctx.fill(); }
+            ctx.fillStyle = '#cbd5e1'; ctx.beginPath(); ctx.ellipse(0, -10, 17, 8, 0, 0, Math.PI * 2); ctx.fill();
+        } else {
+            ctx.fillStyle = '#ef4444'; for (let i = -14; i <= 14; i += 7) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 3.5, -12); ctx.lineTo(i + 7, 0); ctx.fill(); }
+            ctx.fillStyle = '#cbd5e1'; ctx.beginPath(); ctx.ellipse(0, 0, 17, 8, 0, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+    });
+}
+
+function drawCurrentZones() {
+    if (currentStageId !== 2) return;
+    currentZones.forEach(zone => {
+        ctx.save(); ctx.fillStyle = 'rgba(56, 189, 248, 0.08)'; ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'; ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i++) {
+            let lx = zone.x + zone.width - (((animTime * 45 + i * 60)) % zone.width); let ly = zone.y + 30 + i * 35;
+            ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - 25, ly); ctx.stroke();
+        }
+        ctx.restore();
+    });
+}
+
+// 🎨 1-3 宇宙ボスのグラフィック完全復元
+function drawBoss() {
+    if (!boss || !boss.alive) return;
+    ctx.save();
+    let centerX = boss.x + boss.width / 2;
+    let centerY = boss.y + boss.height / 2 + Math.sin(animTime * 3) * 4;
+    ctx.translate(centerX, centerY);
+
+    let wingFlap = Math.sin(animTime * 16) * 0.4;
+    ctx.save(); ctx.translate(4, -12); ctx.rotate(-0.5 + wingFlap);
+    let wingGradBack = ctx.createLinearGradient(-15, -20, 15, 0);
+    wingGradBack.addColorStop(0, 'rgba(56, 189, 248, 0.9)');
+    wingGradBack.addColorStop(0.5, 'rgba(186, 230, 253, 0.6)');
+    wingGradBack.addColorStop(1, 'rgba(14, 165, 233, 0.1)');
+    ctx.fillStyle = wingGradBack; ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(-12, -12, 22, 9, -Math.PI / 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    let stingGrad = ctx.createLinearGradient(20, 0, 38, 0);
+    stingGrad.addColorStop(0, '#991b1b'); stingGrad.addColorStop(0.5, '#ef4444'); stingGrad.addColorStop(1, '#fca5a5');
+    ctx.fillStyle = stingGrad; ctx.beginPath(); ctx.moveTo(22, -3); ctx.lineTo(38, 2); ctx.lineTo(22, 7); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 1; ctx.stroke();
+
+    let bodyGrad = ctx.createRadialGradient(-6, -6, 2, 0, 2, 28);
+    bodyGrad.addColorStop(0, '#fef08a'); bodyGrad.addColorStop(0.4, '#f59e0b'); bodyGrad.addColorStop(0.85, '#b45309'); bodyGrad.addColorStop(1, '#78350f');
+    ctx.fillStyle = bodyGrad; ctx.beginPath(); ctx.ellipse(0, 2, 27, 19, 0, 0, Math.PI * 2); ctx.fill();
+
+    let stripeGrad = ctx.createLinearGradient(0, -18, 0, 20);
+    stripeGrad.addColorStop(0, '#334155'); stripeGrad.addColorStop(0.5, '#0f172a'); stripeGrad.addColorStop(1, '#020617');
+    ctx.fillStyle = stripeGrad;
+    [-7, 3, 13].forEach((offX, idx) => {
+        let w = idx === 2 ? 4.5 : 5.5;
+        ctx.beginPath(); ctx.ellipse(offX, 2, w, 17 - idx * 1.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(offX - 1, 2, w * 0.6, (17 - idx * 1.2) * 0.8, 0, Math.PI * 0.6, Math.PI * 1.4); ctx.stroke();
+    });
+
+    ctx.save(); ctx.translate(-4, -10); ctx.rotate(0.2 - wingFlap);
+    let wingGradFront = ctx.createLinearGradient(-15, -25, 20, 0);
+    wingGradFront.addColorStop(0, 'rgba(186, 230, 253, 0.95)'); wingGradFront.addColorStop(0.6, 'rgba(56, 189, 248, 0.7)'); wingGradFront.addColorStop(1, 'rgba(14, 165, 233, 0.2)');
+    ctx.fillStyle = wingGradFront; ctx.strokeStyle = '#bae6fd'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(-14, -14, 25, 10, -Math.PI / 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, -2); ctx.lineTo(-24, -20); ctx.stroke();
+    ctx.restore();
+
+    let headGrad = ctx.createRadialGradient(-16, -4, 1, -14, 0, 12);
+    headGrad.addColorStop(0, '#475569'); headGrad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = headGrad; ctx.beginPath(); ctx.ellipse(-16, 0, 10, 11, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 8;
+    let visorGrad = ctx.createLinearGradient(-22, -4, -12, 4);
+    visorGrad.addColorStop(0, '#fca5a5'); visorGrad.addColorStop(0.5, '#ef4444'); visorGrad.addColorStop(1, '#991b1b');
+    ctx.fillStyle = visorGrad; ctx.beginPath(); ctx.ellipse(-18, 0, 5.5, 4.5, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-19.5, -1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(-23, -19); ctx.stroke();
+    ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 5; ctx.beginPath(); ctx.arc(-23, -19, 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    let barX = boss.x - 5; let barY = boss.y - 28; let barW = boss.width + 10;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'; ctx.fillRect(barX, barY, barW, 6);
+    let hpRatio = Math.max(0, boss.hp / boss.maxHp);
+    let hpGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    hpGrad.addColorStop(0, '#ef4444'); hpGrad.addColorStop(1, '#f59e0b');
+    ctx.fillStyle = hpGrad; ctx.fillRect(barX, barY, barW * hpRatio, 6);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, 6);
+}
+
+function drawDarknessOverlay() {
+    if (currentStageId !== 2 || hamster.x < 1400) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    let darkCanvas = document.createElement('canvas');
+    darkCanvas.width = BASE_WIDTH; darkCanvas.height = BASE_HEIGHT;
+    let dCtx = darkCanvas.getContext('2d');
+    dCtx.fillStyle = 'rgba(5, 12, 30, 0.92)'; dCtx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    dCtx.globalCompositeOperation = 'destination-out';
+
+    let hamCX = hamster.x + hamster.width / 2 - camera.x;
+    let hamCY = hamster.y + hamster.height / 2 - camera.y;
+    let hamLightRadius = hamster.bigTimer > 0 ? 110 : 70;
+    let hGrad = dCtx.createRadialGradient(hamCX, hamCY, 10, hamCX, hamCY, hamLightRadius);
+    hGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)'); hGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.8)'); hGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    dCtx.fillStyle = hGrad; dCtx.beginPath(); dCtx.arc(hamCX, hamCY, hamLightRadius, 0, Math.PI * 2); dCtx.fill();
+
+    enemies.forEach(e => {
+        if (e.alive && e.type === 'angler') {
+            let angCX = e.x + (e.dir === 1 ? e.width + 10 : -10) - camera.x;
+            let angCY = e.y - camera.y;
+            let aGrad = dCtx.createRadialGradient(angCX, angCY, 5, angCX, angCY, 45);
+            aGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)'); aGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+            dCtx.fillStyle = aGrad; dCtx.beginPath(); dCtx.arc(angCX, angCY, 45, 0, Math.PI * 2); dCtx.fill();
+        }
+    });
+
+    ctx.drawImage(darkCanvas, 0, 0);
+    ctx.restore();
+}
+
+function drawUI2D() {
+    const stageTitles = { 1: '1-1', 2: '1-2', 3: '1-3', 4: '2-1' };
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; ctx.fillRect(5, 5, 390, 26);
+    ctx.strokeStyle = '#f59e0b'; ctx.strokeRect(5, 5, 390, 26);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(`ハムの大冒険 WORLD ${stageTitles[currentStageId]}`, 10, 22);
+    ctx.fillText(`SCORE: ${String(score).padStart(6, '0')}`, 155, 22);
+    ctx.fillStyle = '#ef4444'; ctx.fillText('♥'.repeat(lives), 270, 22);
+    ctx.fillStyle = '#ffffff'; ctx.fillText(`🌻 ${itemsCollected}/${totalItems}`, 330, 22);
+
+    if (popupTimer > 0) {
+        ctx.fillStyle = bgmPhase === 'WARNING' ? '#ef4444' : '#f59e0b';
+        ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(popupText, BASE_WIDTH / 2, 60); ctx.textAlign = 'start';
+    }
+}
+
+function draw2D() {
+    if (currentStageId === 4 && golgoEventTimer > 0) {
+        ctx.fillStyle = '#991b1b'; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    } else if (currentStageId === 1) {
+        let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+        bgGradient.addColorStop(0, '#38bdf8'); bgGradient.addColorStop(0.7, '#bae6fd'); bgGradient.addColorStop(1, '#4ade80');
+        ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    } else if (currentStageId === 2) {
+        let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+        bgGradient.addColorStop(0, '#0284c7'); bgGradient.addColorStop(0.6, '#0369a1'); bgGradient.addColorStop(1, '#0f172a');
+        ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.beginPath(); ctx.moveTo(50, 0); ctx.lineTo(120, BASE_HEIGHT); ctx.lineTo(180, BASE_HEIGHT); ctx.lineTo(90, 0); ctx.fill();
+    } else if (currentStageId === 3) {
+        let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+        if (camera.x < 2800) {
+            bgGradient.addColorStop(0, '#0284c7'); bgGradient.addColorStop(0.5, '#38bdf8'); bgGradient.addColorStop(1, '#f0f9ff');
+        } else if (camera.x < 3000) {
+            bgGradient.addColorStop(0, '#1e1b4b'); bgGradient.addColorStop(0.6, '#312e81'); bgGradient.addColorStop(1, '#4338ca');
+        } else {
+            bgGradient.addColorStop(0, '#020617'); bgGradient.addColorStop(0.6, '#0f172a'); bgGradient.addColorStop(1, '#1e1b4b');
+        }
+        ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    } else if (currentStageId === 4) {
+        let bgGradient = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
+        bgGradient.addColorStop(0, '#0f172a'); bgGradient.addColorStop(0.7, '#1e293b'); bgGradient.addColorStop(1, '#334155');
+        ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    }
+
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    if (currentStageId === 3 && camera.x >= 2800) {
+        ctx.fillStyle = '#ffffff';
+        stars.forEach(s => {
+            ctx.globalAlpha = Math.sin(animTime * 2 + s.alpha * 10) * 0.5 + 0.5;
+            ctx.fillRect(s.x, s.y, s.size, s.size);
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    if (currentStageId === 2) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        bubbles.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill(); });
+        drawCurrentZones();
+    }
+
+    if (currentStageId === 4) {
+        let isRed = (golgoEventTimer > 0);
+        ctx.fillStyle = isRed ? '#7f1d1d' : '#1e293b';
+        ctx.strokeStyle = isRed ? '#fca5a5' : '#475569';
+        ctx.lineWidth = 1;
+        for (let bx = 0; bx < STAGE_WIDTH; bx += 120) {
+            for (let by = 0; by < 180; by += 40) {
+                ctx.fillRect(bx + 10, by + 5, 100, 30);
+                ctx.strokeRect(bx + 10, by + 5, 100, 30);
+                for (let wx = bx + 20; wx < bx + 100; wx += 25) {
+                    ctx.fillStyle = isRed ? '#b91c1c' : '#0f172a';
+                    ctx.fillRect(wx, by + 12, 15, 18);
+                }
+            }
+        }
+    }
+
+    platforms.forEach(p => {
+        if (currentStageId === 3) {
+            let blockGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
+            blockGrad.addColorStop(0, '#64748b'); blockGrad.addColorStop(1, '#334155');
+            ctx.fillStyle = blockGrad;
+            ctx.beginPath(); ctx.roundRect(p.x, p.y, p.width, p.height, 6); ctx.fill();
+            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1; ctx.stroke();
+        } else if (currentStageId === 4) {
+            let isRed = (golgoEventTimer > 0);
+            ctx.fillStyle = isRed ? '#991b1b' : '#334155'; ctx.fillRect(p.x, p.y, p.width, p.height);
+            ctx.strokeStyle = isRed ? '#fca5a5' : '#94a3b8'; ctx.lineWidth = 1; ctx.strokeRect(p.x, p.y, p.width, p.height);
+        } else {
+            let grassGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + 6);
+            grassGrad.addColorStop(0, '#4ade80'); grassGrad.addColorStop(1, '#16a34a');
+            ctx.fillStyle = grassGrad; ctx.fillRect(p.x, p.y, p.width, 6);
+
+            let dirtGrad = ctx.createLinearGradient(p.x, p.y + 6, p.x, p.y + p.height);
+            dirtGrad.addColorStop(0, '#92400e'); dirtGrad.addColorStop(1, '#451a03');
+            ctx.fillStyle = dirtGrad; ctx.fillRect(p.x, p.y + 6, p.width, p.height - 6);
+        }
+    });
+
+    movingPlatforms.forEach(p => {
+        let mGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
+        mGrad.addColorStop(0, '#fbbf24'); mGrad.addColorStop(1, '#d97706');
+        ctx.fillStyle = mGrad; ctx.fillRect(p.x, p.y, p.width, p.height);
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.strokeRect(p.x, p.y, p.width, p.height);
+    });
+
+    spikes.forEach(spike => {
+        let spikeGrad = ctx.createLinearGradient(spike.x, spike.y, spike.x, spike.y + spike.height);
+        spikeGrad.addColorStop(0, '#f87171'); spikeGrad.addColorStop(1, '#991b1b');
+        ctx.fillStyle = spikeGrad;
+        for (let i = 0; i < Math.floor(spike.width / 10); i++) {
+            ctx.beginPath(); ctx.moveTo(spike.x + i * 10, spike.y + spike.height);
+            ctx.lineTo(spike.x + i * 10 + 5, spike.y); ctx.lineTo(spike.x + (i + 1) * 10, spike.y + spike.height); ctx.fill();
+        }
+    });
+
+    drawClams();
+
+    springs.forEach(s => { 
+        ctx.fillStyle = '#f59e0b'; ctx.fillRect(s.x, s.y + 8, s.width, 6); 
+        ctx.fillStyle = '#cbd5e1'; ctx.fillRect(s.x + 2, s.y, s.width - 4, 8); 
+    });
+
+    items.forEach(item => {
+        if (!item.collected) {
+            ctx.save();
+            ctx.translate(item.x + item.width / 2, item.y + item.height / 2);
+            let seedGrad = ctx.createRadialGradient(-1, -2, 1, 0, 0, 8);
+            seedGrad.addColorStop(0, '#fef08a'); seedGrad.addColorStop(0.5, '#b45309'); seedGrad.addColorStop(1, '#451a03');
+            ctx.fillStyle = seedGrad; ctx.beginPath(); ctx.ellipse(0, 0, 5, 8, Math.PI / 12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -5, 1, 10); ctx.fillRect(1, -5, 1, 10);
+            ctx.restore();
+        }
+    });
+
+    powerSeeds.forEach(seed => {
+        if (!seed.collected) {
+            ctx.save(); ctx.translate(seed.x + seed.width/2, seed.y + seed.height/2);
+            let seedGrad = ctx.createRadialGradient(-2, -2, 1, 0, 0, 10);
+            seedGrad.addColorStop(0, '#fef08a'); seedGrad.addColorStop(1, '#b45309');
+            ctx.fillStyle = seedGrad; ctx.beginPath(); ctx.ellipse(0, 0, 9, 11, Math.PI/8, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(-3, -7, 2, 14); ctx.fillRect(1, -7, 2, 14); ctx.restore();
+        }
+    });
+
+    bullets.forEach(b => {
+        ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 6;
+        let bGrad = ctx.createLinearGradient(b.x, b.y, b.x + b.width, b.y);
+        bGrad.addColorStop(0, '#ffffff'); bGrad.addColorStop(1, '#f59e0b');
+        ctx.fillStyle = bGrad; ctx.beginPath(); ctx.ellipse(b.x + 5, b.y + 3, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+
+    bossBullets.forEach(bb => {
+        ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 6;
+        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(bb.x, bb.y, 4.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bb.x - 1, bb.y - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+
+    enemies.forEach(enemy => drawEnemy(enemy));
+    drawBoss();
+
+    if (currentStageId !== 3) {
+        ctx.fillStyle = '#b45309'; ctx.fillRect(goal.x, goal.y + 10, goal.width, goal.height - 10);
+        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(goal.x - 5, goal.y + 10); ctx.lineTo(goal.x + goal.width / 2, goal.y - 5); ctx.lineTo(goal.x + goal.width + 5, goal.y + 10); ctx.fill();
+    }
+
+    drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
+
+    ctx.restore();
+
+    drawDarknessOverlay();
+
+    if (currentStageId === 4 && golgoEventTimer > 0) {
+        drawGolgoCricetusHead(golgoHamsterY);
+    }
+
+    drawUI2D();
+
+    if (gameState === 'GAMEOVER') {
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER 😭', BASE_WIDTH/2, 110);
+        ctx.font = '13px sans-serif'; ctx.fillText('ボタンを押して再挑戦', BASE_WIDTH/2, 145);
+        ctx.textAlign = 'start';
+    } else if (gameState === 'CLEAR') {
+        const stageNames = { 1: '1-1', 2: '1-2', 3: '1-3', 4: '2-1' };
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+        ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(currentStageId === 4 ? '🎉 ALL STAGE CLEAR! 🎉' : `WORLD ${stageNames[currentStageId]} CLEAR! 🎉`, BASE_WIDTH/2, 90);
+        ctx.fillStyle = '#ffffff'; ctx.font = '14px sans-serif';
+        ctx.fillText(`SCORE: ${score}`, BASE_WIDTH/2, 120);
+        ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 14px sans-serif';
+        ctx.fillText(currentStageId < 4 ? `▶ ボタンを押して WORLD ${stageNames[currentStageId + 1]} へ！` : '🏆 全ステージ完全制覇！おめでとう！', BASE_WIDTH/2, 160);
+        ctx.textAlign = 'start';
+    }
+}
+
+loadStageData(1);
