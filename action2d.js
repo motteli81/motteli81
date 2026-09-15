@@ -71,6 +71,31 @@ let trashBags2D = [];
 let skateboardTimer = 0;
 let skateboardEnemy = { active: false, x: -50, y: 192, width: 30, height: 18, speed: 7.0 };
 
+// 🛍️ レジ袋のスプライト画像＆クロマキー処理
+const trashBagImg = new Image();
+trashBagImg.crossOrigin = "Anonymous";
+trashBagImg.src = "https://raw.githubusercontent.com/motteli81/motteli81/6398e353eb4f992312196ab6d3c490fd05289da1/bini-rufukuro.jpg";
+let processedBagCanvas = null;
+
+trashBagImg.onload = () => {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = trashBagImg.width;
+    tempCanvas.height = trashBagImg.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(trashBagImg, 0, 0);
+
+    const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    const data = imgData.data;
+    // 背景の緑色（R:低, G:高, B:低）を透過処理
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 1] > 120 && data[i] < 100 && data[i + 2] < 100) {
+            data[i + 3] = 0;
+        }
+    }
+    tempCtx.putImageData(imgData, 0, 0);
+    processedBagCanvas = tempCanvas;
+};
+
 // 🎯 暗躍演出用パラメータ
 let golgoEventTriggered = false;
 let golgoEventTimer = 0;
@@ -378,11 +403,11 @@ function loadStageData(stageId) {
             { type: 'bike', x: 2450, y: 170, width: 35, height: 40 }
         ];
 
-        // 🛍️ 5. 風に舞うレジ袋（画面上を独立して舞う設定）
+        // 🛍️ 5. 画面手前を風で舞い散る目くらましレジ袋（画面固定X/Y座標で初期化）
         trashBags2D = [
-            { x: 50, y: 60, speed: 1.2, radius: 15, baseOffsetY: 0 },
-            { x: 180, y: 90, speed: 1.6, radius: 18, baseOffsetY: 2 },
-            { x: 320, y: 50, speed: 1.1, radius: 14, baseOffsetY: 4 }
+            { screenX: 420, baseY: 50, speed: 2.2, frame: 0, scale: 0.35, phase: 0 },
+            { screenX: 480, baseY: 120, speed: 1.8, frame: 8, scale: 0.45, phase: 2 },
+            { screenX: 550, baseY: 80, speed: 2.5, frame: 16, scale: 0.38, phase: 4 }
         ];
 
         // 🛹 3. 後方からの暴走スケボー用初期設定
@@ -582,10 +607,15 @@ function update2D() {
             }
         }
 
-        // 🛍️ 5. レジ袋の位置・移動計算（画面内をフワフワ巡回）
+        // 🛍️ 5. レジ袋の画面移動＆コマ送りアニメーション（右から左へ風に乗って舞う）
         trashBags2D.forEach(bag => {
-            bag.x += bag.speed;
-            if (bag.x > BASE_WIDTH + 30) bag.x = -30;
+            bag.screenX -= bag.speed;
+            bag.frame = (bag.frame + 0.25) % 32; // 32コマのアニメーションループ
+            if (bag.screenX < -80) {
+                bag.screenX = BASE_WIDTH + Math.random() * 100 + 40;
+                bag.baseY = Math.random() * 120 + 30;
+                bag.scale = 0.3 + Math.random() * 0.2;
+            }
         });
     }
 
@@ -1240,16 +1270,27 @@ function draw2D() {
 
     drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
 
-    ctx.restore(); // カメラのスクロールを解除（以降は画面固定描画）
+    ctx.restore(); // カメラのスクロールを解除（画面固定描画へ切替）
 
-    // 🛍️ 5. 風に舞うレジ袋（画面の手前に重なって目くらましにする）
-    if (currentStageId === 4) {
+    // 🛍️ 5. 画像アセットを使った風に舞うレジ袋（画面手前に重なって表示）
+    if (currentStageId === 4 && processedBagCanvas) {
         trashBags2D.forEach(bag => {
-            let bagY = bag.y + Math.sin(animTime * 0.8 + bag.x + bag.baseOffsetY) * 20;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-            ctx.beginPath(); 
-            ctx.arc(bag.x, bagY, bag.radius, 0, Math.PI * 2); 
-            ctx.fill();
+            const frameIdx = Math.floor(bag.frame);
+            const col = frameIdx % 8;
+            const row = Math.floor(frameIdx / 8) % 4;
+
+            const frameW = processedBagCanvas.width / 8;
+            const frameH = processedBagCanvas.height / 4;
+
+            const drawW = frameW * bag.scale;
+            const drawH = frameH * bag.scale;
+            const bagY = bag.baseY + Math.sin(animTime * 0.4 + bag.screenX * 0.05) * 15;
+
+            ctx.drawImage(
+                processedBagCanvas,
+                col * frameW, row * frameH, frameW, frameH,
+                bag.screenX, bagY, drawW, drawH
+            );
         });
     }
 
