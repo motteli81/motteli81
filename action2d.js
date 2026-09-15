@@ -702,7 +702,7 @@ function update2D() {
             else if (enemy.y >= enemy.endY) { enemy.y = enemy.endY; enemy.dir = -1; }
         } else if (enemy.type === 'fly') enemy.x += enemy.speed * enemy.dir;
 
-        // 接触判定
+        // 接触判定（カラスを含む全敵共通）
         if (isColliding(hamster, enemy)) {
             if (hamster.bigTimer > 0) { enemy.alive = false; score += 300; playSound2D('stomp'); }
             else if (currentStageId !== 3 && hamster.vy > 0 && hamster.y + hamster.height - hamster.vy <= enemy.y + 10) { enemy.alive = false; score += 200; hamster.vy = -5; playSound2D('stomp'); }
