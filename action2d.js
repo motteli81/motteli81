@@ -65,36 +65,10 @@ let bossBullets = [];
 let boss = null;
 let bgmPhase = 'NORMAL';
 
-// 🎯 2-1 追加要素用の変数（障害物・スケボー・レジ袋）
+// 🎯 2-1 追加要素用の変数（障害物・スケボー）
 let obstacles2D = [];
-let trashBags2D = [];
 let skateboardTimer = 0;
 let skateboardEnemy = { active: false, x: -50, y: 192, width: 30, height: 18, speed: 7.0 };
-
-// 🛍️ レジ袋のスプライト画像＆クロマキー処理
-const trashBagImg = new Image();
-trashBagImg.crossOrigin = "Anonymous";
-trashBagImg.src = "https://raw.githubusercontent.com/motteli81/motteli81/6398e353eb4f992312196ab6d3c490fd05289da1/bini-rufukuro.jpg";
-let processedBagCanvas = null;
-
-trashBagImg.onload = () => {
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = trashBagImg.width;
-    tempCanvas.height = trashBagImg.height;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(trashBagImg, 0, 0);
-
-    const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-    const data = imgData.data;
-    // 背景の緑色（R:低, G:高, B:低）を透過処理
-    for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 1] > 120 && data[i] < 100 && data[i + 2] < 100) {
-            data[i + 3] = 0;
-        }
-    }
-    tempCtx.putImageData(imgData, 0, 0);
-    processedBagCanvas = tempCanvas;
-};
 
 // 🎯 暗躍演出用パラメータ
 let golgoEventTriggered = false;
@@ -268,7 +242,7 @@ let platforms = [], movingPlatforms = [], spikes = [], springs = [], items = [],
 function loadStageData(stageId) {
     currentStageId = stageId; itemsCollected = 0; bullets = []; bossBullets = []; boss = null; bgmPhase = 'NORMAL'; clams = []; currentZones = [];
     golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
-    obstacles2D = []; trashBags2D = []; skateboardTimer = 0; skateboardEnemy.active = false;
+    obstacles2D = []; skateboardTimer = 0; skateboardEnemy.active = false;
 
     const btnJump = document.getElementById('btnJump'); const btnShot = document.getElementById('btnShot');
     const dpadContainer = document.getElementById('dpadContainer'); const joystickArea = document.getElementById('joystickArea');
@@ -401,13 +375,6 @@ function loadStageData(stageId) {
             { type: 'bike', x: 1250, y: 170, width: 35, height: 40 },
             { type: 'trash', x: 1950, y: 180, width: 22, height: 30 },
             { type: 'bike', x: 2450, y: 170, width: 35, height: 40 }
-        ];
-
-        // 🛍️ 5. 画面手前を風で舞い散る目くらましレジ袋（小型化サイズに調整）
-        trashBags2D = [
-            { screenX: 420, baseY: 50, speed: 2.2, frame: 0, scale: 0.20, phase: 0 },
-            { screenX: 480, baseY: 110, speed: 1.8, frame: 8, scale: 0.25, phase: 2 },
-            { screenX: 550, baseY: 70, speed: 2.5, frame: 16, scale: 0.18, phase: 4 }
         ];
 
         // 🛹 3. 後方からの暴走スケボー用初期設定
@@ -606,17 +573,6 @@ function update2D() {
                 skateboardEnemy.active = false; skateboardTimer = 0;
             }
         }
-
-        // 🛍️ 5. レジ袋の画面移動＆コマ送りアニメーション（小さめサイズを再生成）
-        trashBags2D.forEach(bag => {
-            bag.screenX -= bag.speed;
-            bag.frame = (bag.frame + 0.25) % 32; 
-            if (bag.screenX < -60) {
-                bag.screenX = BASE_WIDTH + Math.random() * 80 + 30;
-                bag.baseY = Math.random() * 110 + 20;
-                bag.scale = 0.16 + Math.random() * 0.10; // 小ぶりなサイズでランダムリスポーン
-            }
-        });
     }
 
     let isMoving = false;
@@ -1270,29 +1226,7 @@ function draw2D() {
 
     drawHamster(hamster.x, hamster.y, hamster.width, hamster.height, hamster.direction);
 
-    ctx.restore(); // カメラのスクロールを解除（画面固定描画へ切替）
-
-    // 🛍️ 5. 小型化された風に舞うレジ袋（画面手前に重なって表示）
-    if (currentStageId === 4 && processedBagCanvas) {
-        trashBags2D.forEach(bag => {
-            const frameIdx = Math.floor(bag.frame);
-            const col = frameIdx % 8;
-            const row = Math.floor(frameIdx / 8) % 4;
-
-            const frameW = processedBagCanvas.width / 8;
-            const frameH = processedBagCanvas.height / 4;
-
-            const drawW = frameW * bag.scale;
-            const drawH = frameH * bag.scale;
-            const bagY = bag.baseY + Math.sin(animTime * 0.4 + bag.screenX * 0.05) * 15;
-
-            ctx.drawImage(
-                processedBagCanvas,
-                col * frameW, row * frameH, frameW, frameH,
-                bag.screenX, bagY, drawW, drawH
-            );
-        });
-    }
+    ctx.restore(); // カメラのスクロールを解除
 
     drawDarknessOverlay();
 
