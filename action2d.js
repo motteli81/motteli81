@@ -505,7 +505,7 @@ function start3DMode() {
     document.getElementById('controls-3d').style.display = 'grid';
     document.getElementById('touch-hint-3d').style.display = 'block';
     document.getElementById('stageSelectBar').style.display = 'none';
-    document.getElementById('titleText').innerText = 'ACT 2: HAMSTER SHOWDOWN';
+    document.getElementById('titleText').innerText = '  ';
 }
 
 function end3DMode() {
@@ -524,7 +524,7 @@ function update2D() {
     if (gameState !== 'PLAYING') return;
 
     if (currentStageId === 4) {
-        if (!golgoEventTriggered && hamster.x > 90) {
+        if (!golgoEventTriggered && hamster.x > 3000) {
             golgoEventTriggered = true; golgoEventTimer = 1; playSound2D('encounter');
         }
         if (golgoEventTimer > 0) {
