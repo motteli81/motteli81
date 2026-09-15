@@ -300,7 +300,6 @@ function loadStageData(stageId) {
             { x: 2450, y: 130, width: 110, height: 20 }, { x: 2650, y: 210, width: 550, height: 30 }
         ];
         movingPlatforms = []; spikes = []; springs = [];
-        // 元のアイテム配置を完全維持（11個）
         items = [
             { x: 150, y: 180, width: 14, height: 18, collected: false }, { x: 520, y: 140, width: 14, height: 18, collected: false },
             { x: 740, y: 100, width: 14, height: 18, collected: false }, { x: 1050, y: 170, width: 14, height: 18, collected: false },
@@ -308,7 +307,7 @@ function loadStageData(stageId) {
             { x: 1640, y: 80, width: 14, height: 18, collected: false }, { x: 1880, y: 170, width: 14, height: 18, collected: false },
             { x: 2250, y: 130, width: 14, height: 18, collected: false }, { x: 2750, y: 170, width: 14, height: 18, collected: false }, { x: 3000, y: 170, width: 14, height: 18, collected: false }
         ];
-        totalItems = 12; // 1-2の元々のクリア目標数（12個）
+        totalItems = 12;
         powerSeeds = [{ x: 2260, y: 140, width: 20, height: 22, collected: false }]; speedBerries = [{ x: 540, y: 100, width: 18, height: 20, collected: false }]; recoveryHearts = [{ x: 1640, y: 50, width: 18, height: 18, collected: false }];
         enemies = [
             { type: 'crab', x: 200, y: 192, width: 22, height: 18, startX: 100, endX: 320, speed: 0.4, dir: 1, alive: true },
@@ -320,12 +319,11 @@ function loadStageData(stageId) {
         ];
         currentZones = [{ x: 900, y: 0, width: 350, height: 240, forceX: -1.6 }];
         
-        // 🦪 シンプルに貝を上下に散らして4枚配置
         clams = [
-            { x: 950, y: 40, width: 36, height: 30, hasSeed: true, seedCollected: false },   // 上層
-            { x: 1020, y: 110, width: 36, height: 30, hasSeed: true, seedCollected: false }, // 中層
-            { x: 1120, y: 170, width: 36, height: 30, hasSeed: true, seedCollected: false }, // 下層
-            { x: 1180, y: 50, width: 36, height: 30, hasSeed: true, seedCollected: false }   // 上層
+            { x: 950, y: 40, width: 36, height: 30, hasSeed: true, seedCollected: false },
+            { x: 1020, y: 110, width: 36, height: 30, hasSeed: true, seedCollected: false },
+            { x: 1120, y: 170, width: 36, height: 30, hasSeed: true, seedCollected: false },
+            { x: 1180, y: 50, width: 36, height: 30, hasSeed: true, seedCollected: false }
         ];
         goal = { x: 3100, y: 170, width: 30, height: 40 };
 
@@ -360,35 +358,39 @@ function loadStageData(stageId) {
         goal = { x: 3650, y: 100, width: 30, height: 40 };
 
     } else if (stageId === 4) { 
-        STAGE_WIDTH = 3200; hamster.gravity = 0.45; hamster.drag = 1.0; hamster.baseSpeed = 3.2; hamster.speed = 3.2;
+        STAGE_WIDTH = 3200; hamster.gravity = 0.45; hamster.drag = 0.98; hamster.baseSpeed = 3.6; hamster.speed = 3.6;
+        
+        // 🛣️ 2-1: 穴なしの完全フラット一本道
         platforms = [
-            { x: 0, y: 190, width: 450, height: 50 }, { x: 520, y: 160, width: 160, height: 80 },
-            { x: 750, y: 130, width: 180, height: 110 }, { x: 1000, y: 190, width: 400, height: 50 },
-            { x: 1480, y: 160, width: 150, height: 80 }, { x: 1700, y: 120, width: 200, height: 120 },
-            { x: 2000, y: 190, width: 400, height: 50 }, { x: 2480, y: 150, width: 160, height: 90 }, { x: 2700, y: 190, width: 500, height: 50 }
+            { x: 0, y: 210, width: 3200, height: 30 }
         ];
-        movingPlatforms = [
-            { x: 450, y: 170, width: 60, height: 14, minX: 450, maxX: 510, minY: 170, maxY: 170, vx: 1.0, vy: 0 },
-            { x: 930, y: 150, width: 60, height: 14, minX: 930, maxX: 930, minY: 110, maxY: 180, vx: 0, vy: 1.2 }
-        ];
-        spikes = [{ x: 1120, y: 176, width: 40, height: 14 }, { x: 2150, y: 176, width: 60, height: 14 }];
-        springs = [{ x: 680, y: 146, width: 20, height: 14, bounce: -12.5 }];
+        movingPlatforms = []; spikes = []; springs = [];
         items = [
-            { x: 120, y: 160, width: 14, height: 18, collected: false }, { x: 300, y: 160, width: 14, height: 18, collected: false },
-            { x: 560, y: 130, width: 14, height: 18, collected: false }, { x: 800, y: 100, width: 14, height: 18, collected: false },
-            { x: 1080, y: 160, width: 14, height: 18, collected: false }, { x: 1280, y: 160, width: 14, height: 18, collected: false },
-            { x: 1530, y: 130, width: 14, height: 18, collected: false }, { x: 1780, y: 90, width: 14, height: 18, collected: false },
-            { x: 2080, y: 160, width: 14, height: 18, collected: false }, { x: 2280, y: 160, width: 14, height: 18, collected: false }
+            { x: 300, y: 170, width: 14, height: 18, collected: false }, { x: 600, y: 170, width: 14, height: 18, collected: false },
+            { x: 900, y: 170, width: 14, height: 18, collected: false }, { x: 1200, y: 170, width: 14, height: 18, collected: false },
+            { x: 1500, y: 170, width: 14, height: 18, collected: false }, { x: 1800, y: 170, width: 14, height: 18, collected: false },
+            { x: 2100, y: 170, width: 14, height: 18, collected: false }, { x: 2400, y: 170, width: 14, height: 18, collected: false },
+            { x: 2700, y: 170, width: 14, height: 18, collected: false }
         ];
-        totalItems = 10; powerSeeds = [{ x: 1790, y: 65, width: 20, height: 22, collected: false }];
-        speedBerries = [{ x: 320, y: 155, width: 18, height: 20, collected: false }]; recoveryHearts = [{ x: 1530, y: 100, width: 18, height: 18, collected: false }];
+        totalItems = 9; 
+        powerSeeds = [{ x: 1400, y: 170, width: 20, height: 22, collected: false }];
+        speedBerries = [{ x: 800, y: 170, width: 18, height: 20, collected: false }]; 
+        recoveryHearts = [{ x: 2000, y: 170, width: 18, height: 18, collected: false }];
+
+        // 🐱 街中ステージ：野良猫（cat）＆ カラス（crow）敵ラッシュ
         enemies = [
-            { type: 'bug', x: 220, y: 172, width: 22, height: 18, startX: 180, endX: 350, speed: 1.3, dir: 1, alive: true },
-            { type: 'bug', x: 1050, y: 172, width: 22, height: 18, startX: 1020, endX: 1200, speed: 1.5, dir: 1, alive: true },
-            { type: 'bug', x: 1750, y: 102, width: 22, height: 18, startX: 1720, endX: 1880, speed: 1.6, dir: -1, alive: true },
-            { type: 'bug', x: 2750, y: 172, width: 22, height: 18, startX: 2720, endX: 2950, speed: 1.8, dir: 1, alive: true }
+            // 地上を走る野良猫
+            { type: 'cat', x: 500, y: 184, width: 28, height: 26, startX: 350, endX: 750, speed: 2.2, dir: -1, alive: true },
+            { type: 'cat', x: 1100, y: 184, width: 28, height: 26, startX: 950, endX: 1350, speed: 2.5, dir: 1, alive: true },
+            { type: 'cat', x: 1800, y: 184, width: 28, height: 26, startX: 1600, endX: 2050, speed: 2.8, dir: -1, alive: true },
+            { type: 'cat', x: 2500, y: 184, width: 28, height: 26, startX: 2300, endX: 2750, speed: 3.0, dir: 1, alive: true },
+
+            // 空中を急降下するカラス
+            { type: 'crow', x: 800, y: 60, width: 24, height: 20, startX: 650, endX: 950, speed: 1.5, dir: -1, alive: true },
+            { type: 'crow', x: 1500, y: 50, width: 24, height: 20, startX: 1350, endX: 1700, speed: 1.8, dir: -1, alive: true },
+            { type: 'crow', x: 2200, y: 55, width: 24, height: 20, startX: 2000, endX: 2400, speed: 2.0, dir: -1, alive: true }
         ];
-        goal = { x: 3100, y: 150, width: 30, height: 40 };
+        goal = { x: 3100, y: 170, width: 30, height: 40 };
     }
     if (soundEnabled && isBGMPlaying) startBGM2D();
 }
@@ -489,7 +491,12 @@ function resetGame() {
     bullets = []; bossBullets = []; bgmPhase = 'NORMAL'; camera.x = 0; itemsCollected = 0;
     items.forEach(i => i.collected = false); powerSeeds.forEach(p => p.collected = false);
     speedBerries.forEach(s => s.collected = false); recoveryHearts.forEach(h => h.collected = false);
-    enemies.forEach(e => { e.alive = true; if(e.startX) e.x = e.startX; if(e.startY) e.y = e.startY; });
+    enemies.forEach(e => { 
+        e.alive = true; 
+        if(e.startX) e.x = e.startX; 
+        if(e.startY) e.y = e.startY;
+        if(e.type === 'crow') { e.state = 'PATROL'; e.baseY = e.y; }
+    });
     clams.forEach(c => c.seedCollected = false);
     if (boss) { boss.alive = true; boss.hp = boss.maxHp; boss.y = boss.startY; }
     golgoEventTriggered = false; golgoEventTimer = 0; golgoHamsterY = 240;
@@ -617,12 +624,36 @@ function update2D() {
 
     enemies.forEach(enemy => {
         if (!enemy.alive) return;
-        if (enemy.type === 'bug' || enemy.type === 'crab' || enemy.type === 'angler') {
-            enemy.x += enemy.speed * enemy.dir; if (enemy.x <= enemy.startX) { enemy.x = enemy.startX; enemy.dir = 1; } else if (enemy.x >= enemy.endX) { enemy.x = enemy.endX; enemy.dir = -1; }
+        
+        // 敵のタイプ別AI・移動処理
+        if (enemy.type === 'crow') {
+            if (!enemy.state) { enemy.state = 'PATROL'; enemy.baseY = enemy.y; }
+            if (enemy.state === 'PATROL') {
+                enemy.x += enemy.speed * enemy.dir;
+                enemy.y = enemy.baseY + Math.sin(animTime * 0.6) * 6;
+                if (enemy.x <= enemy.startX) enemy.dir = 1;
+                if (enemy.x >= enemy.endX) enemy.dir = -1;
+                if (Math.abs(hamster.x - enemy.x) < 180 && hamster.x < enemy.x && enemy.dir === -1) {
+                    enemy.state = 'DIVE';
+                }
+            } else if (enemy.state === 'DIVE') {
+                enemy.x -= enemy.speed * 1.8; enemy.y += 3.5;
+                if (enemy.y >= 184) enemy.state = 'RETURN';
+            } else if (enemy.state === 'RETURN') {
+                enemy.x -= enemy.speed * 0.8; enemy.y -= 2.0;
+                if (enemy.y <= enemy.baseY) enemy.state = 'PATROL';
+            }
+        } else if (enemy.type === 'cat' || enemy.type === 'bug' || enemy.type === 'crab' || enemy.type === 'angler') {
+            enemy.x += enemy.speed * enemy.dir; 
+            if (enemy.x <= enemy.startX) { enemy.x = enemy.startX; enemy.dir = 1; } 
+            else if (enemy.x >= enemy.endX) { enemy.x = enemy.endX; enemy.dir = -1; }
         } else if (enemy.type === 'jelly' || enemy.type === 'bee') {
-            enemy.y += enemy.speed * enemy.dir; if (enemy.y <= enemy.startY) { enemy.y = enemy.startY; enemy.dir = 1; } else if (enemy.y >= enemy.endY) { enemy.y = enemy.endY; enemy.dir = -1; }
+            enemy.y += enemy.speed * enemy.dir; 
+            if (enemy.y <= enemy.startY) { enemy.y = enemy.startY; enemy.dir = 1; } 
+            else if (enemy.y >= enemy.endY) { enemy.y = enemy.endY; enemy.dir = -1; }
         } else if (enemy.type === 'fly') enemy.x += enemy.speed * enemy.dir;
 
+        // 接触判定
         if (isColliding(hamster, enemy)) {
             if (hamster.bigTimer > 0) { enemy.alive = false; score += 300; playSound2D('stomp'); }
             else if (currentStageId !== 3 && hamster.vy > 0 && hamster.y + hamster.height - hamster.vy <= enemy.y + 10) { enemy.alive = false; score += 200; hamster.vy = -5; playSound2D('stomp'); }
@@ -698,13 +729,34 @@ function drawGolgoCricetusHead(offsetY) {
     ctx.restore();
 }
 
-// 🎨 2D敵のオリジナルグラフィック完全復元
+// 🎨 2D敵グラフィック描画（野良猫 cat ＆ カラス crow 追加版）
 function drawEnemy(enemy) {
     if (!enemy.alive) return;
     ctx.save(); ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
     if (enemy.dir === -1) ctx.scale(-1, 1);
 
-    if (enemy.type === 'bug') {
+    if (enemy.type === 'cat') {
+        // 🐱 野良猫：橙色のトラ柄＆シャープな目としっぽ
+        ctx.fillStyle = '#f97316'; ctx.fillRect(-14, -8, 28, 20);
+        ctx.fillStyle = '#ea580c';
+        ctx.beginPath();
+        ctx.moveTo(-12, -8); ctx.lineTo(-7, -15); ctx.lineTo(-2, -8);
+        ctx.moveTo(2, -8); ctx.lineTo(7, -15); ctx.lineTo(12, -8); ctx.fill();
+        ctx.fillStyle = '#facc15'; ctx.fillRect(4, -4, 4, 4);
+        ctx.strokeStyle = '#ea580c'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-14, 4); ctx.lineTo(-20, -4); ctx.stroke();
+
+    } else if (enemy.type === 'crow') {
+        // 🐦‍⬛ カラス：黒い体＆羽ばたきアニメ＆黄色クチバシ
+        ctx.fillStyle = '#1e293b'; ctx.fillRect(-8, -6, 16, 14);
+        const wingY = Math.sin(animTime * 1.5) > 0 ? -12 : 2;
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(-2, -2); ctx.lineTo(-14, wingY); ctx.lineTo(-2, 4);
+        ctx.moveTo(2, -2); ctx.lineTo(14, wingY); ctx.lineTo(2, 4); ctx.fill();
+        ctx.fillStyle = '#eab308'; ctx.fillRect(8, -2, 6, 4);
+
+    } else if (enemy.type === 'bug') {
         let wiggle = Math.sin(animTime * 4) * 2;
         let bugGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, 11);
         bugGrad.addColorStop(0, '#86efac'); bugGrad.addColorStop(0.6, '#22c55e'); bugGrad.addColorStop(1, '#14532d');
@@ -833,7 +885,7 @@ function drawCurrentZones() {
     });
 }
 
-// 🎨 1-3 宇宙ボスのグラフィック完全復元
+// 🎨 1-3 宇宙ボスのグラフィック
 function drawBoss() {
     if (!boss || !boss.alive) return;
     ctx.save();
